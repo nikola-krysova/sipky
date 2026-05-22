@@ -1,0 +1,160 @@
+import { useRef, useEffect, useState } from "react";
+import FullCalendar from "@fullcalendar/react";
+import timeGridPlugin from "@fullcalendar/timegrid";
+import interactionPlugin from "@fullcalendar/interaction";
+import type { EventInput, DateSelectArg } from "@fullcalendar/core";
+import { addDays, format, parseISO, startOfDay } from "date-fns";
+import { supabase } from "../../lib/supabase";
+import type { OpeningHours, ReservationRules } from "../../types/reservation";
+import { DAY_NAMES } from "../../lib/validations";
+import { CalendarSkeleton } from "../ui/Skeleton";
+import CalendarEvent from "./CalendarEvent";
+
+interface Props {
+  openingHours: OpeningHours;
+  rules: ReservationRules;
+  onSelectSlot: (date: string, timeFrom: string) => void;
+  excludeReservationId?: string;
+}
+
+export default function ReservationCalendar({
+  openingHours,
+  rules,
+  onSelectSlot,
+  excludeReservationId,
+}: Props) {
+  const calendarRef = useRef<FullCalendar>(null);
+  const [events, setEvents] = useState<EventInput[]>([]);
+  const [loading, setLoading] = useState(true);
+  const isMobile = window.innerWidth < 768;
+
+  const today = startOfDay(new Date());
+  const minDate = addDays(today, rules.min_days_ahead);
+  const maxDate = addDays(today, rules.max_days_ahead);
+
+  const getSlotMinTime = () => {
+    const allOpens = Object.values(openingHours).map((h) => h.open);
+    return allOpens.sort()[0] || "14:00";
+  };
+
+  const getSlotMaxTime = () => {
+    const allCloses = Object.values(openingHours).map((h) =>
+      h.close === "24:00" ? "24:00" : h.close
+    );
+    return allCloses.sort().reverse()[0] || "24:00";
+  };
+
+  const buildBusinessHours = () => {
+    return Object.entries(openingHours)
+      .filter(([, h]) => !h.closed)
+      .map(([day, h]) => {
+        const jsDay = Object.keys(DAY_NAMES).find(
+          (k) => DAY_NAMES[Number(k)] === day
+        );
+        return {
+          daysOfWeek: [Number(jsDay)],
+          startTime: h.open,
+          endTime: h.close === "24:00" ? "24:00:00" : h.close,
+        };
+      });
+  };
+
+  const loadReservations = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("reservations")
+      .select("id, date, time_from, time_to, status, cancel_token")
+      .eq("status", "active");
+
+    if (!error && data) {
+      type Row = { id: string; date: string; time_from: string; time_to: string };
+      const evts: EventInput[] = (data as Row[])
+        .filter((r) =>
+          excludeReservationId ? r.id !== excludeReservationId : true
+        )
+        .map((r) => ({
+          id: r.id,
+          start: `${r.date}T${r.time_from}`,
+          end: `${r.date}T${r.time_to === "24:00" ? "00:00" : r.time_to}`,
+          title: "Obsazeno",
+          classNames: ["fc-event-occupied"],
+          extendedProps: { occupied: true },
+        }));
+      setEvents(evts);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    loadReservations();
+
+    const channel = supabase
+      .channel("reservations-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "reservations" },
+        () => loadReservations()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [excludeReservationId]);
+
+  const handleDateSelect = (info: DateSelectArg) => {
+    const selectedDate = format(info.start, "yyyy-MM-dd");
+    const selectedTime = format(info.start, "HH:mm");
+    const dayKey = DAY_NAMES[info.start.getDay()];
+    const hours = openingHours[dayKey];
+
+    if (hours.closed) return;
+
+    const d = parseISO(selectedDate);
+    if (d < minDate || d > maxDate) return;
+
+    onSelectSlot(selectedDate, selectedTime);
+  };
+
+  if (loading) return <CalendarSkeleton />;
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-100 shadow-sm overflow-hidden">
+      <FullCalendar
+        ref={calendarRef}
+        plugins={[timeGridPlugin, interactionPlugin]}
+        initialView={isMobile ? "timeGridDay" : "timeGridWeek"}
+        headerToolbar={{
+          left: "prev,next today",
+          center: "title",
+          right: isMobile ? "" : "timeGridWeek,timeGridDay",
+        }}
+        locale="cs"
+        firstDay={1}
+        slotMinTime={getSlotMinTime()}
+        slotMaxTime={getSlotMaxTime()}
+        slotDuration="00:30:00"
+        slotLabelInterval="01:00:00"
+        snapDuration="00:30:00"
+        selectable
+        selectMirror
+        unselectAuto
+        validRange={{
+          start: format(minDate, "yyyy-MM-dd"),
+          end: format(addDays(maxDate, 1), "yyyy-MM-dd"),
+        }}
+        businessHours={buildBusinessHours()}
+        events={events}
+        select={handleDateSelect}
+        eventContent={(arg) => <CalendarEvent eventInfo={arg} />}
+        height="auto"
+        expandRows
+        nowIndicator
+        allDaySlot={false}
+        selectConstraint="businessHours"
+        eventOverlap={false}
+        selectOverlap={false}
+      />
+    </div>
+  );
+}
