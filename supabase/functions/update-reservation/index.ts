@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { deleteGoogleEvent, createGoogleEvent } from "../_shared/google-calendar.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": Deno.env.get("APP_URL") ?? "*",
@@ -130,6 +131,19 @@ serve(async (req) => {
     });
   }
 
+  // Blocked slots check
+  const { data: blockedConflicts } = await supabase
+    .from("blocked_slots")
+    .select("id")
+    .eq("date", date)
+    .or(`and(time_from.lt.${time_to},time_to.gt.${time_from})`);
+
+  if (blockedConflicts && blockedConflicts.length > 0) {
+    return new Response(JSON.stringify({ error: "Tento termín je zablokován" }), {
+      status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   // Cancel old, create new
   await supabase.from("reservations").update({ status: "cancelled" }).eq("id", original.id);
 
@@ -154,9 +168,27 @@ serve(async (req) => {
     });
   }
 
+  // Google Calendar
+  const appUrl = Deno.env.get("APP_URL") ?? "";
+  if (original.google_event_id) {
+    await deleteGoogleEvent(original.google_event_id);
+  }
+  const googleEventId = await createGoogleEvent({
+    name: newReservation.name,
+    email: newReservation.email,
+    phone: newReservation.phone,
+    date: newReservation.date,
+    time_from: newReservation.time_from,
+    time_to: newReservation.time_to,
+    note: newReservation.note,
+    cancel_url: `${appUrl}/rezervace/${newReservation.cancel_token}`,
+  });
+  if (googleEventId) {
+    await supabase.from("reservations").update({ google_event_id: googleEventId }).eq("id", newReservation.id);
+  }
+
   // Send confirmation email
   const resendKey = Deno.env.get("RESEND_API_KEY");
-  const appUrl = Deno.env.get("APP_URL") ?? "";
 
   if (resendKey) {
     const fmt = (d: string) => { const [y,m,day] = d.split("-"); return `${day}. ${m}. ${y}`; };

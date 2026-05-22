@@ -11,6 +11,17 @@ export interface Reservation {
   status: "active" | "cancelled";
   cancel_token: string;
   reminder_sent: boolean;
+  recurring_group_id?: string | null;
+  google_event_id?: string | null;
+}
+
+export interface BlockedSlot {
+  id: string;
+  created_at: string;
+  date: string;
+  time_from: string;
+  time_to: string;
+  label: string;
 }
 
 export interface OpeningHours {

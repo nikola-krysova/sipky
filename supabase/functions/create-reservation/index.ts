@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createGoogleEvent } from "../_shared/google-calendar.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": Deno.env.get("APP_URL") ?? "*",
@@ -141,6 +142,19 @@ serve(async (req) => {
     });
   }
 
+  // Blocked slots check
+  const { data: blockedConflicts } = await supabase
+    .from("blocked_slots")
+    .select("id")
+    .eq("date", date)
+    .or(`and(time_from.lt.${time_to},time_to.gt.${time_from})`);
+
+  if (blockedConflicts && blockedConflicts.length > 0) {
+    return new Response(JSON.stringify({ error: "Tento termín je zablokován" }), {
+      status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   // Insert reservation
   const { data: reservation, error: insertError } = await supabase
     .from("reservations")
@@ -154,10 +168,25 @@ serve(async (req) => {
     });
   }
 
+  // Google Calendar
+  const appUrl = Deno.env.get("APP_URL") ?? "";
+  const googleEventId = await createGoogleEvent({
+    name: reservation.name,
+    email: reservation.email,
+    phone: reservation.phone,
+    date: reservation.date,
+    time_from: reservation.time_from,
+    time_to: reservation.time_to,
+    note: reservation.note,
+    cancel_url: `${appUrl}/rezervace/${reservation.cancel_token}`,
+  });
+  if (googleEventId) {
+    await supabase.from("reservations").update({ google_event_id: googleEventId }).eq("id", reservation.id);
+  }
+
   // Send emails via Resend
   const resendKey = Deno.env.get("RESEND_API_KEY");
   const adminEmail = Deno.env.get("ADMIN_EMAIL") ?? "";
-  const appUrl = Deno.env.get("APP_URL") ?? "";
 
   if (resendKey) {
     const formatDate = (d: string) => {
@@ -165,7 +194,6 @@ serve(async (req) => {
       return `${day}. ${m}. ${y}`;
     };
 
-    // Customer confirmation
     await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
@@ -177,7 +205,6 @@ serve(async (req) => {
       }),
     });
 
-    // Admin notification
     if (adminEmail) {
       await fetch("https://api.resend.com/emails", {
         method: "POST",

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { deleteGoogleEvent } from "../_shared/google-calendar.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": Deno.env.get("APP_URL") ?? "*",
@@ -59,6 +60,10 @@ serve(async (req) => {
     return new Response(JSON.stringify({ error: "Chyba při rušení rezervace" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+  }
+
+  if (reservation.google_event_id) {
+    await deleteGoogleEvent(reservation.google_event_id);
   }
 
   // Send cancellation email
