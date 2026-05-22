@@ -21,6 +21,8 @@ const editSchema = z.object({
   time_from: z.string().min(1),
   time_to: z.string().min(1),
   note: z.string().max(300).optional(),
+  recurring: z.boolean().optional(),
+  recurring_until: z.string().optional(),
 });
 
 type EditSchema = z.infer<typeof editSchema>;
@@ -58,6 +60,8 @@ export default function ReservationModal({
         time_from: "",
         time_to: "",
         note: "",
+        recurring: false,
+        recurring_until: "",
       },
     });
 
@@ -71,14 +75,17 @@ export default function ReservationModal({
         time_from: reservation.time_from.slice(0, 5),
         time_to: reservation.time_to.slice(0, 5),
         note: reservation.note ?? "",
+        recurring: false,
+        recurring_until: "",
       });
     } else {
-      reset({ name: "", email: "", phone: "", date: "", time_from: "", time_to: "", note: "" });
+      reset({ name: "", email: "", phone: "", date: "", time_from: "", time_to: "", note: "", recurring: false, recurring_until: "" });
     }
   }, [reservation, open]);
 
   const watchDate = watch("date");
   const watchTimeFrom = watch("time_from");
+  const watchRecurring = watch("recurring");
 
   useEffect(() => {
     if (!watchDate) return;
@@ -104,14 +111,43 @@ export default function ReservationModal({
     setLoading(true);
     try {
       if (isNew) {
-        const { error } = await supabase.from("reservations").insert({
-          ...data,
-          phone: data.phone || null,
-          note: data.note || null,
-          status: "active",
-        });
-        if (error) throw error;
-        toast.success("Rezervace přidána");
+        if (data.recurring && data.recurring_until) {
+          const dates: string[] = [];
+          const current = new Date(data.date);
+          const until = new Date(data.recurring_until);
+          while (current <= until) {
+            dates.push(current.toISOString().slice(0, 10));
+            current.setDate(current.getDate() + 7);
+          }
+          const recurring_group_id = crypto.randomUUID();
+          const records = dates.map((d) => ({
+            name: data.name,
+            email: data.email,
+            phone: data.phone || null,
+            date: d,
+            time_from: data.time_from,
+            time_to: data.time_to,
+            note: data.note || null,
+            status: "active",
+            recurring_group_id,
+          }));
+          const { error } = await supabase.from("reservations").insert(records);
+          if (error) throw error;
+          toast.success(`Vytvořeno ${records.length} rezervací`);
+        } else {
+          const { error } = await supabase.from("reservations").insert({
+            name: data.name,
+            email: data.email,
+            phone: data.phone || null,
+            date: data.date,
+            time_from: data.time_from,
+            time_to: data.time_to,
+            note: data.note || null,
+            status: "active",
+          });
+          if (error) throw error;
+          toast.success("Rezervace přidána");
+        }
       } else {
         const { error } = await supabase
           .from("reservations")
@@ -189,6 +225,20 @@ export default function ReservationModal({
           <label className={labelClass}>Poznámka</label>
           <textarea {...register("note")} className={`${inputClass} resize-none`} rows={3} />
         </div>
+        {isNew && (
+          <div className="border-t border-gray-100 pt-4 mt-2">
+            <div className="flex items-center gap-2 mb-2">
+              <input {...register("recurring")} type="checkbox" id="recurring" className="accent-black" />
+              <label htmlFor="recurring" className="text-sm text-gray-700 cursor-pointer">Opakovat každý týden</label>
+            </div>
+            {watchRecurring && (
+              <div>
+                <label className={labelClass}>Opakovat do *</label>
+                <input {...register("recurring_until")} type="date" className={inputClass} />
+              </div>
+            )}
+          </div>
+        )}
         <div className="flex gap-3 pt-2">
           <Button variant="secondary" type="button" onClick={onClose} className="flex-1">
             Zrušit

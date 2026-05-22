@@ -45,6 +45,7 @@ export default function AdminLayout() {
             <nav className="flex">
               <NavLink to="/admin" end className={linkClass}>Dashboard</NavLink>
               <NavLink to="/admin/rezervace" className={linkClass}>Rezervace</NavLink>
+              <NavLink to="/admin/blokace" className={linkClass}>Blokace</NavLink>
               <NavLink to="/admin/nastaveni" className={linkClass}>Nastavení</NavLink>
             </nav>
           </div>

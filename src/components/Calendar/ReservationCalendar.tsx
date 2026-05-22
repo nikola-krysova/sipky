@@ -25,6 +25,7 @@ export default function ReservationCalendar({
 }: Props) {
   const calendarRef = useRef<FullCalendar>(null);
   const [events, setEvents] = useState<EventInput[]>([]);
+  const eventsRef = useRef<EventInput[]>([]);
   const [loading, setLoading] = useState(true);
   const isMobile = window.innerWidth < 768;
 
@@ -61,10 +62,15 @@ export default function ReservationCalendar({
 
   const loadReservations = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("reservations")
-      .select("id, date, time_from, time_to, status, cancel_token")
-      .eq("status", "active");
+    const [{ data, error }, { data: blockedData }] = await Promise.all([
+      supabase
+        .from("reservations")
+        .select("id, date, time_from, time_to, status, cancel_token")
+        .eq("status", "active"),
+      supabase
+        .from("blocked_slots")
+        .select("id, date, time_from, time_to, label"),
+    ]);
 
     if (!error && data) {
       type Row = { id: string; date: string; time_from: string; time_to: string };
@@ -80,7 +86,17 @@ export default function ReservationCalendar({
           classNames: ["fc-event-occupied"],
           extendedProps: { occupied: true },
         }));
-      setEvents(evts);
+      const blockedEvts: EventInput[] = (blockedData ?? []).map((b: any) => ({
+        id: `blocked-${b.id}`,
+        start: `${b.date}T${b.time_from}`,
+        end: `${b.date}T${b.time_to === "24:00" ? "00:00" : b.time_to}`,
+        title: b.label,
+        classNames: ["fc-event-blocked"],
+        extendedProps: { blocked: true },
+      }));
+      const allEvts = [...evts, ...blockedEvts];
+      setEvents(allEvts);
+      eventsRef.current = allEvts;
     }
     setLoading(false);
   };
@@ -112,6 +128,16 @@ export default function ReservationCalendar({
 
     const d = parseISO(selectedDate);
     if (d < minDate || d > maxDate) return;
+
+    const overlapsBlocked = eventsRef.current.some((e) => {
+      if (!e.extendedProps?.blocked) return false;
+      const eDate = String(e.start ?? "").slice(0, 10);
+      if (eDate !== selectedDate) return false;
+      const eStart = String(e.start ?? "").slice(11, 16);
+      const eEnd = String(e.end ?? "").slice(11, 16);
+      return selectedTime < eEnd && selectedTime >= eStart;
+    });
+    if (overlapsBlocked) return;
 
     onSelectSlot(selectedDate, selectedTime);
   };

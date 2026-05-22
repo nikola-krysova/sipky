@@ -7,6 +7,7 @@ import AdminLogin from "./pages/admin/login";
 import AdminDashboard from "./pages/admin/index";
 import AdminReservations from "./pages/admin/rezervace";
 import AdminSettings from "./pages/admin/nastaveni";
+import AdminBlokace from "./pages/admin/blokace";
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<AdminDashboard />} />
           <Route path="rezervace" element={<AdminReservations />} />
+          <Route path="blokace" element={<AdminBlokace />} />
           <Route path="nastaveni" element={<AdminSettings />} />
         </Route>
       </Routes>

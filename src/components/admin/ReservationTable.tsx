@@ -6,6 +6,8 @@ interface Props {
   onEdit: (r: Reservation) => void;
   onCancel: (r: Reservation) => void;
   onDelete: (r: Reservation) => void;
+  onCancelSeries?: (r: Reservation) => void;
+  onDeleteSeries?: (r: Reservation) => void;
   loading?: boolean;
 }
 
@@ -14,6 +16,8 @@ export default function ReservationTable({
   onEdit,
   onCancel,
   onDelete,
+  onCancelSeries,
+  onDeleteSeries,
   loading = false,
 }: Props) {
   if (loading) {
@@ -61,7 +65,14 @@ export default function ReservationTable({
               <td className="px-3 py-3 whitespace-nowrap">
                 {formatTime(r.time_from)} – {formatTime(r.time_to)}
               </td>
-              <td className="px-3 py-3">{r.name}</td>
+              <td className="px-3 py-3">
+                <div className="flex items-center gap-1.5">
+                  {r.recurring_group_id && (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700">↻</span>
+                  )}
+                  {r.name}
+                </div>
+              </td>
               <td className="px-3 py-3 text-gray-600">{r.email}</td>
               <td className="px-3 py-3 text-gray-600">{r.phone || "–"}</td>
               <td className="px-3 py-3">
@@ -94,12 +105,28 @@ export default function ReservationTable({
                       Zrušit
                     </button>
                   )}
+                  {r.status === "active" && r.recurring_group_id && onCancelSeries && (
+                    <button
+                      onClick={() => onCancelSeries(r)}
+                      className="text-xs text-orange-600 hover:underline"
+                    >
+                      Série
+                    </button>
+                  )}
                   {r.status === "cancelled" && (
                     <button
                       onClick={() => onDelete(r)}
                       className="text-xs text-gray-500 hover:underline"
                     >
                       Smazat
+                    </button>
+                  )}
+                  {r.status === "cancelled" && r.recurring_group_id && onDeleteSeries && (
+                    <button
+                      onClick={() => onDeleteSeries(r)}
+                      className="text-xs text-gray-400 hover:underline"
+                    >
+                      Smazat sérii
                     </button>
                   )}
                 </div>
