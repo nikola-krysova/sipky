@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { EDGE_FUNCTION_URL } from "../../lib/supabase";
@@ -14,6 +14,8 @@ import ReservationForm from "./ReservationForm";
 
 export default function ReservationDetail() {
   const { token } = useParams<{ token: string }>();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [reservation, setReservation] = useState<Reservation | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -22,7 +24,7 @@ export default function ReservationDetail() {
   const [showChangeCalendar, setShowChangeCalendar] = useState(false);
   const [changeSlot, setChangeSlot] = useState<{ date: string; time: string } | null>(null);
   const [settings, setSettings] = useState<{ openingHours: OpeningHours; rules: ReservationRules } | null>(null);
-  const [changed, setChanged] = useState(false);
+  const changed = (location.state as { changed?: boolean } | null)?.changed ?? false;
 
   const fetchReservation = async () => {
     setLoading(true);
@@ -90,12 +92,8 @@ export default function ReservationDetail() {
     }
   };
 
-  const handleChangeSuccess = async () => {
-    setChanged(true);
-    await fetchReservation();
-    setShowChangeCalendar(false);
-    setChangeSlot(null);
-    toast.success("Termín byl úspěšně změněn");
+  const handleChangeSuccess = (newToken: string) => {
+    navigate(`/rezervace/${newToken}`, { state: { changed: true } });
   };
 
   if (loading) {
@@ -146,6 +144,7 @@ export default function ReservationDetail() {
             initialDate={changeSlot.date}
             initialTimeFrom={changeSlot.time}
             prefillData={{ name: reservation.name, email: reservation.email, phone: reservation.phone }}
+            cancelToken={reservation.cancel_token}
             onSuccess={handleChangeSuccess}
             onCancel={() => setChangeSlot(null)}
           />

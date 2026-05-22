@@ -22,6 +22,7 @@ interface Props {
   initialDate?: string;
   initialTimeFrom?: string;
   prefillData?: { name?: string; email?: string; phone?: string };
+  cancelToken?: string;
   onSuccess: (token: string) => void;
   onCancel: () => void;
 }
@@ -32,6 +33,7 @@ export default function ReservationForm({
   initialDate,
   initialTimeFrom,
   prefillData,
+  cancelToken,
   onSuccess,
   onCancel,
 }: Props) {
@@ -114,26 +116,40 @@ export default function ReservationForm({
 
     setLoading(true);
     try {
-      const res = await fetch(`${EDGE_FUNCTION_URL}/create-reservation`, {
+      const endpoint = cancelToken ? "update-reservation" : "create-reservation";
+      const payload = cancelToken
+        ? {
+            token: cancelToken,
+            name: data.name,
+            email: data.email,
+            phone: data.phone || null,
+            date: data.date,
+            time_from: data.time_from,
+            time_to: data.time_to,
+            note: data.note || null,
+          }
+        : {
+            name: data.name,
+            email: data.email,
+            phone: data.phone || null,
+            date: data.date,
+            time_from: data.time_from,
+            time_to: data.time_to,
+            note: data.note || null,
+          };
+
+      const res = await fetch(`${EDGE_FUNCTION_URL}/${endpoint}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
         },
-        body: JSON.stringify({
-          name: data.name,
-          email: data.email,
-          phone: data.phone || null,
-          date: data.date,
-          time_from: data.time_from,
-          time_to: data.time_to,
-          note: data.note || null,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const json = await res.json();
       if (!res.ok) {
-        toast.error(json.error ?? "Chyba při vytváření rezervace");
+        toast.error(json.error ?? (cancelToken ? "Chyba při změně termínu" : "Chyba při vytváření rezervace"));
         return;
       }
       onSuccess(json.cancel_token);
@@ -159,7 +175,7 @@ export default function ReservationForm({
         className="bg-white rounded-lg border border-gray-100 shadow-sm p-6"
       >
         <div className="flex items-center justify-between mb-6">
-          <h2 className="font-display text-2xl font-semibold">Nová rezervace</h2>
+          <h2 className="font-display text-2xl font-semibold">{cancelToken ? "Změna termínu" : "Nová rezervace"}</h2>
           <button onClick={onCancel} className="text-gray-400 hover:text-gray-600">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
