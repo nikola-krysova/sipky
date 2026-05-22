@@ -32,45 +32,7 @@ npm run dev
    - `ADMIN_EMAIL`
    - `APP_URL`
 
-## Cron připomínky
-
-V Supabase Dashboard → Edge Functions → `send-reminders` nastavte cron schedule:
-```
-0 10 * * *
-```
-(Každý den v 10:00)
-
-## Deploy na Vercel
-
-1. Propojte GitHub repozitář s Vercel
-2. Nastavte env proměnné `VITE_SUPABASE_URL` a `VITE_SUPABASE_ANON_KEY`
-3. Build command: `npm run build`, Output: `dist`
-
 ## Admin přihlášení
 
 Admin účet vytvoříte v Supabase Dashboard → Authentication → Users.
 Přihlašovací URL: `/admin/login`
-
-## Struktura projektu
-
-```
-src/
-├── components/
-│   ├── Calendar/        # FullCalendar wrapper + custom event render
-│   ├── Reservation/     # Formulář, potvrzení, správa zákazníkem
-│   ├── admin/           # Admin tabulka, modal, statistiky
-│   └── ui/              # Button, Modal, Skeleton
-├── pages/
-│   ├── index.tsx        # Hlavní zákaznická stránka
-│   ├── rezervace/       # /rezervace/:token
-│   └── admin/           # Dashboard, rezervace, nastavení, login
-├── lib/
-│   ├── supabase.ts      # Supabase client
-│   └── validations.ts   # Sdílená validační logika + Zod schema
-└── types/
-    └── reservation.ts
-
-supabase/
-├── migrations/          # 3 SQL migrace
-└── functions/           # 5 Edge Functions (create/cancel/update/get/send-reminders)
-```
