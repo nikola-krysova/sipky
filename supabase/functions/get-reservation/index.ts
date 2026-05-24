@@ -26,7 +26,7 @@ serve(async (req) => {
 
   const { data, error } = await supabase
     .from("reservations")
-    .select("id, name, email, phone, date, time_from, time_to, note, status, cancel_token")
+    .select("id, name, email, phone, date, time_from, time_to, note, status, cancel_token, recurring_group_id")
     .eq("cancel_token", token)
     .single();
 
