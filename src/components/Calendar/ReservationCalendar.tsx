@@ -27,7 +27,13 @@ export default function ReservationCalendar({
   const [events, setEvents] = useState<EventInput[]>([]);
   const eventsRef = useRef<EventInput[]>([]);
   const [loading, setLoading] = useState(true);
-  const isMobile = window.innerWidth < 768;
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   const today = startOfDay(new Date());
   const minDate = addDays(today, rules.min_days_ahead);
@@ -65,7 +71,7 @@ export default function ReservationCalendar({
     const [{ data, error }, { data: blockedData }] = await Promise.all([
       supabase
         .from("reservations")
-        .select("id, date, time_from, time_to, status, cancel_token")
+        .select("id, date, time_from, time_to, status")
         .eq("status", "active"),
       supabase
         .from("blocked_slots")
@@ -73,7 +79,7 @@ export default function ReservationCalendar({
     ]);
 
     if (!error && data) {
-      type Row = { id: string; date: string; time_from: string; time_to: string };
+      type Row = { id: string; date: string; time_from: string; time_to: string; status: string };
       const evts: EventInput[] = (data as Row[])
         .filter((r) =>
           excludeReservationId ? r.id !== excludeReservationId : true
