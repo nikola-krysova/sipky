@@ -27,9 +27,17 @@ export default function ReservationSuccess({ cancelToken, onReset }: Props) {
       </motion.div>
 
       <h2 className="font-display text-2xl font-semibold mb-2">Rezervace potvrzena!</h2>
-      <p className="text-gray-600 mb-6">
+      <p className="text-gray-600 mb-2">
         Zkontrolujte e-mail – poslali jsme vám potvrzení s podrobnostmi.
       </p>
+      <p className="text-gray-500 text-sm mb-6">
+        V e-mailu najdete odkaz pro správu nebo zrušení rezervace.
+      </p>
+
+      <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left text-sm text-gray-600">
+        <p className="font-medium text-gray-700 mb-1">Kde nás najdete?</p>
+        <p>Restaurace U Školy · Milešovice, okres Vyškov</p>
+      </div>
 
       <div className="flex flex-col sm:flex-row gap-3 justify-center">
         <Link to={`/rezervace/${cancelToken}`}>
