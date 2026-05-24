@@ -4,10 +4,11 @@ import { Button } from "../ui/Button";
 
 interface Props {
   cancelToken: string;
+  reservationNumber?: number;
   onReset: () => void;
 }
 
-export default function ReservationSuccess({ cancelToken, onReset }: Props) {
+export default function ReservationSuccess({ cancelToken, reservationNumber, onReset }: Props) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -27,6 +28,11 @@ export default function ReservationSuccess({ cancelToken, onReset }: Props) {
       </motion.div>
 
       <h2 className="font-display text-2xl font-semibold mb-2">Rezervace potvrzena!</h2>
+      {reservationNumber && (
+        <p className="text-2xl font-mono font-semibold text-gray-700 mb-3">
+          #{String(reservationNumber).padStart(4, "0")}
+        </p>
+      )}
       <p className="text-gray-600 mb-2">
         Zkontrolujte e-mail – poslali jsme vám potvrzení s podrobnostmi.
       </p>

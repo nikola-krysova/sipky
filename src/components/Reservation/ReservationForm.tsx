@@ -23,7 +23,7 @@ interface Props {
   initialTimeFrom?: string;
   prefillData?: { name?: string; email?: string; phone?: string };
   cancelToken?: string;
-  onSuccess: (token: string) => void;
+  onSuccess: (token: string, number?: number) => void;
   onCancel: () => void;
 }
 
@@ -152,7 +152,7 @@ export default function ReservationForm({
         toast.error(json.error ?? (cancelToken ? "Chyba při změně termínu" : "Chyba při vytváření rezervace"));
         return;
       }
-      onSuccess(json.cancel_token);
+      onSuccess(json.cancel_token, json.reservation_number);
     } catch {
       toast.error("Síťová chyba. Zkuste to znovu.");
     } finally {

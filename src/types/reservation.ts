@@ -1,6 +1,7 @@
 export interface Reservation {
   id: string;
   created_at: string;
+  reservation_number?: number;
   name: string;
   email: string;
   phone?: string;

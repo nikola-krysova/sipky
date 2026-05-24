@@ -31,6 +31,7 @@ export default function HomePage() {
   const [view, setView] = useState<View>("calendar");
   const [selectedSlot, setSelectedSlot] = useState<{ date: string; time: string } | null>(null);
   const [successToken, setSuccessToken] = useState<string>("");
+  const [successNumber, setSuccessNumber] = useState<number | undefined>();
   const [openingHours, setOpeningHours] = useState<OpeningHours>(DEFAULT_OPENING_HOURS);
   const [rules, setRules] = useState<ReservationRules>(DEFAULT_RULES);
   const [loadingSettings, setLoadingSettings] = useState(true);
@@ -61,8 +62,9 @@ export default function HomePage() {
     setView("form");
   };
 
-  const handleSuccess = (token: string) => {
+  const handleSuccess = (token: string, number?: number) => {
     setSuccessToken(token);
+    setSuccessNumber(number);
     setView("success");
   };
 
@@ -70,6 +72,7 @@ export default function HomePage() {
     setView("calendar");
     setSelectedSlot(null);
     setSuccessToken("");
+    setSuccessNumber(undefined);
   };
 
   return (
@@ -176,7 +179,7 @@ export default function HomePage() {
                 exit={{ opacity: 0 }}
                 className="max-w-lg mx-auto"
               >
-                <ReservationSuccess cancelToken={successToken} onReset={handleReset} />
+                <ReservationSuccess cancelToken={successToken} reservationNumber={successNumber} onReset={handleReset} />
               </motion.div>
             )}
           </AnimatePresence>

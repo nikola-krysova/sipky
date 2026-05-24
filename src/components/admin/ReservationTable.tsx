@@ -43,7 +43,7 @@ export default function ReservationTable({
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-gray-100">
-            {["Datum", "Čas", "Jméno", "E-mail", "Telefon", "Status", "Poznámka", "Akce"].map(
+            {["#", "Datum", "Čas", "Jméno", "E-mail", "Telefon", "Status", "Poznámka", "Akce"].map(
               (h) => (
                 <th
                   key={h}
@@ -61,6 +61,9 @@ export default function ReservationTable({
               key={r.id}
               className="border-b border-gray-50 hover:bg-gray-50 transition-colors"
             >
+              <td className="px-3 py-3 text-gray-400 text-xs font-mono">
+                {r.reservation_number ? `#${String(r.reservation_number).padStart(4, "0")}` : "–"}
+              </td>
               <td className="px-3 py-3 font-medium">{formatDate(r.date)}</td>
               <td className="px-3 py-3 whitespace-nowrap">
                 {formatTime(r.time_from)} – {formatTime(r.time_to)}

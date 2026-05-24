@@ -189,6 +189,14 @@ export default function ReservationDetail() {
         <h2 className="font-display text-2xl font-semibold mb-6">Vaše rezervace</h2>
 
         <div className="space-y-3 mb-6">
+          {reservation.reservation_number && (
+            <div className="flex justify-between py-2 border-b border-gray-50">
+              <span className="text-sm text-gray-500">Číslo rezervace</span>
+              <span className="text-sm font-mono font-semibold">
+                #{String(reservation.reservation_number).padStart(4, "0")}
+              </span>
+            </div>
+          )}
           <div className="flex justify-between py-2 border-b border-gray-50">
             <span className="text-sm text-gray-500">Jméno</span>
             <span className="text-sm font-medium">{reservation.name}</span>
