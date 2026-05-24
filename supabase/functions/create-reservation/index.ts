@@ -8,12 +8,11 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-// Simple in-memory rate limiter: IP -> [timestamps]
 const rateLimitMap = new Map<string, number[]>();
 
 function checkRateLimit(ip: string): boolean {
   const now = Date.now();
-  const windowMs = 60 * 60 * 1000; // 1 hour
+  const windowMs = 60 * 60 * 1000;
   const maxRequests = 5;
   const timestamps = (rateLimitMap.get(ip) ?? []).filter((t) => now - t < windowMs);
   if (timestamps.length >= maxRequests) return false;
@@ -25,6 +24,15 @@ function checkRateLimit(ip: string): boolean {
 function parseTime(t: string): number {
   const [h, m] = t.split(":").map(Number);
   return h * 60 + m;
+}
+
+function formatDate(d: string) {
+  const [y, m, day] = d.split("-");
+  return `${day}. ${m}. ${y}`;
+}
+
+function formatReservationNumber(n: number) {
+  return `#${String(n).padStart(4, "0")}`;
 }
 
 serve(async (req) => {
@@ -55,7 +63,6 @@ serve(async (req) => {
 
   const { name, email, phone, date, time_from, time_to, note } = body;
 
-  // Basic validation
   if (!name || !email || !date || !time_from || !time_to) {
     return new Response(JSON.stringify({ error: "Chybějící povinná pole" }), {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -68,7 +75,6 @@ serve(async (req) => {
     });
   }
 
-  // Fetch settings
   const [{ data: ohRow }, { data: rrRow }] = await Promise.all([
     supabase.from("settings").select("value").eq("key", "opening_hours").single(),
     supabase.from("settings").select("value").eq("key", "reservation_rules").single(),
@@ -83,7 +89,6 @@ serve(async (req) => {
   const openingHours = ohRow.value;
   const rules = rrRow.value;
 
-  // Date range validation
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const minDate = new Date(today);
@@ -99,7 +104,6 @@ serve(async (req) => {
     });
   }
 
-  // Opening hours validation
   const dayNames = ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
   const dayKey = dayNames[reservDate.getDay()];
   const dayHours = openingHours[dayKey];
@@ -128,7 +132,6 @@ serve(async (req) => {
     });
   }
 
-  // Collision check
   const { data: conflicts } = await supabase
     .from("reservations")
     .select("id")
@@ -142,7 +145,6 @@ serve(async (req) => {
     });
   }
 
-  // Blocked slots check
   const { data: blockedConflicts } = await supabase
     .from("blocked_slots")
     .select("id")
@@ -155,7 +157,6 @@ serve(async (req) => {
     });
   }
 
-  // Insert reservation
   const { data: reservation, error: insertError } = await supabase
     .from("reservations")
     .insert({ name, email, phone: phone || null, date, time_from, time_to, note: note || null, status: "active" })
@@ -187,21 +188,19 @@ serve(async (req) => {
   // Send emails via Resend
   const resendKey = Deno.env.get("RESEND_API_KEY");
   const adminEmail = Deno.env.get("ADMIN_EMAIL") ?? "";
+  // FROM_EMAIL must be a verified domain in Resend. Example: "Restaurace U Školy <rezervace@vasedomena.cz>"
+  const fromEmail = Deno.env.get("FROM_EMAIL") ?? "Restaurace U Školy <onboarding@resend.dev>";
+  const resNum = reservation.reservation_number;
 
   if (resendKey) {
-    const formatDate = (d: string) => {
-      const [y, m, day] = d.split("-");
-      return `${day}. ${m}. ${y}`;
-    };
-
     await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        from: "Restaurace U Školy <noreply@restauraceuskoly.cz>",
+        from: fromEmail,
         to: [email],
-        subject: `Potvrzení rezervace šipek – ${formatDate(date)} ${time_from}`,
-        html: buildCustomerEmail({ name, date, time_from, time_to, note, cancel_token: reservation.cancel_token, appUrl }),
+        subject: `Potvrzení rezervace ${formatReservationNumber(resNum)} – ${formatDate(date)} ${time_from}`,
+        html: buildCustomerEmail({ name, date, time_from, time_to, note, cancel_token: reservation.cancel_token, appUrl, resNum }),
       }),
     });
 
@@ -210,24 +209,24 @@ serve(async (req) => {
         method: "POST",
         headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          from: "Restaurace U Školy <noreply@restauraceuskoly.cz>",
+          from: fromEmail,
           to: [adminEmail],
-          subject: `Nová rezervace šipek – ${formatDate(date)} ${time_from} (${name})`,
-          html: buildAdminEmail({ name, email, phone, date, time_from, time_to, note, appUrl }),
+          subject: `Nová rezervace ${formatReservationNumber(resNum)} – ${formatDate(date)} ${time_from} (${name})`,
+          html: buildAdminEmail({ name, email, phone, date, time_from, time_to, note, appUrl, resNum }),
         }),
       });
     }
   }
 
   return new Response(
-    JSON.stringify({ id: reservation.id, cancel_token: reservation.cancel_token }),
+    JSON.stringify({ id: reservation.id, cancel_token: reservation.cancel_token, reservation_number: resNum }),
     { status: 201, headers: { ...corsHeaders, "Content-Type": "application/json" } }
   );
 });
 
-function buildCustomerEmail({ name, date, time_from, time_to, note, cancel_token, appUrl }: any) {
-  const [y, m, d] = date.split("-");
-  const formattedDate = `${d}. ${m}. ${y}`;
+function buildCustomerEmail({ name, date, time_from, time_to, note, cancel_token, appUrl, resNum }: any) {
+  const formattedDate = formatDate(date);
+  const resNumStr = formatReservationNumber(resNum);
   return `
 <!DOCTYPE html><html><head><meta charset="utf-8"></head>
 <body style="background:#F9F9F9;font-family:Arial,sans-serif;margin:0;padding:20px;">
@@ -242,6 +241,7 @@ function buildCustomerEmail({ name, date, time_from, time_to, note, cancel_token
       <p style="color:#333;font-size:15px;margin:0 0 20px;">Vaše rezervace šipkového terče byla úspěšně vytvořena.</p>
       <div style="background:#f9f9f9;border:1px solid #e5e5e5;border-radius:6px;padding:20px;margin:24px 0;">
         <table style="width:100%;border-collapse:collapse;">
+          <tr><td style="padding:8px 0;color:#666;font-size:14px;">Číslo rezervace:</td><td style="padding:8px 0;font-weight:700;font-size:16px;font-family:monospace;">${resNumStr}</td></tr>
           <tr><td style="padding:8px 0;color:#666;font-size:14px;">Datum:</td><td style="padding:8px 0;font-weight:600;font-size:14px;">${formattedDate}</td></tr>
           <tr><td style="padding:8px 0;color:#666;font-size:14px;">Čas:</td><td style="padding:8px 0;font-weight:600;font-size:14px;">${time_from} – ${time_to}</td></tr>
           <tr><td style="padding:8px 0;color:#666;font-size:14px;">Místo:</td><td style="padding:8px 0;font-weight:600;font-size:14px;">Restaurace U Školy, Milešovice</td></tr>
@@ -262,9 +262,9 @@ function buildCustomerEmail({ name, date, time_from, time_to, note, cancel_token
 </body></html>`;
 }
 
-function buildAdminEmail({ name, email, phone, date, time_from, time_to, note, appUrl }: any) {
-  const [y, m, d] = date.split("-");
-  const formattedDate = `${d}. ${m}. ${y}`;
+function buildAdminEmail({ name, email, phone, date, time_from, time_to, note, appUrl, resNum }: any) {
+  const formattedDate = formatDate(date);
+  const resNumStr = formatReservationNumber(resNum);
   return `
 <!DOCTYPE html><html><head><meta charset="utf-8"></head>
 <body style="background:#F9F9F9;font-family:Arial,sans-serif;margin:0;padding:20px;">
@@ -275,7 +275,8 @@ function buildAdminEmail({ name, email, phone, date, time_from, time_to, note, a
     </div>
     <div style="padding:32px 40px;">
       <table style="width:100%;border-collapse:collapse;">
-        <tr><td style="padding:8px 0;color:#666;font-size:14px;width:120px;">Jméno:</td><td style="padding:8px 0;font-weight:600;font-size:14px;">${name}</td></tr>
+        <tr><td style="padding:8px 0;color:#666;font-size:14px;width:140px;">Číslo rezervace:</td><td style="padding:8px 0;font-weight:700;font-size:16px;font-family:monospace;">${resNumStr}</td></tr>
+        <tr><td style="padding:8px 0;color:#666;font-size:14px;">Jméno:</td><td style="padding:8px 0;font-weight:600;font-size:14px;">${name}</td></tr>
         <tr><td style="padding:8px 0;color:#666;font-size:14px;">E-mail:</td><td style="padding:8px 0;font-size:14px;">${email}</td></tr>
         <tr><td style="padding:8px 0;color:#666;font-size:14px;">Telefon:</td><td style="padding:8px 0;font-size:14px;">${phone || "neuvedeno"}</td></tr>
         <tr><td style="padding:8px 0;color:#666;font-size:14px;">Datum:</td><td style="padding:8px 0;font-weight:600;font-size:14px;">${formattedDate}</td></tr>
