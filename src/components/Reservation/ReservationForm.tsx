@@ -207,7 +207,7 @@ export default function ReservationForm({
               {...register("date")}
               type="date"
               className={inputClass}
-              min={new Date(Date.now() + 86400000).toISOString().slice(0, 10)}
+              min={new Date(Date.now() + rules.min_days_ahead * 86400000).toISOString().slice(0, 10)}
               max={new Date(Date.now() + rules.max_days_ahead * 86400000).toISOString().slice(0, 10)}
             />
             {errors.date && <p className={errorClass}>{errors.date.message}</p>}
