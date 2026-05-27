@@ -46,10 +46,10 @@ export default function ReservationSuccess({ cancelToken, reservationNumber, onR
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3 justify-center">
+        <Button variant="secondary" onClick={onReset}>← Zpět na kalendář</Button>
         <Link to={`/rezervace/${cancelToken}`}>
-          <Button variant="secondary">Spravovat rezervaci</Button>
+          <Button>Spravovat rezervaci</Button>
         </Link>
-        <Button onClick={onReset}>Nová rezervace</Button>
       </div>
     </motion.div>
   );
