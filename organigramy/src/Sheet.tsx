@@ -31,6 +31,8 @@ interface Props {
   trees?: ViewTree[]
   /** Označení listu, např. „2/3“. */
   part?: string
+  /** Pozice s chybějícím nebo zastaralým anglickým názvem (značka jen na obrazovce). */
+  flagIds?: Set<string>
 }
 
 const PT_PER_MM = 72 / 25.4
@@ -96,7 +98,7 @@ export function paginate(doc: OrgDoc, view: string, lang: Lang, page: PageSpec, 
   return pages
 }
 
-export function Sheet({ doc, view, lang, page, selectedId, dragId, drop, className, style, trees, part }: Props) {
+export function Sheet({ doc, view, lang, page, selectedId, dragId, drop, className, style, trees, part, flagIds }: Props) {
   const g = sheetGeometry(page)
   const { w, h, k, m, barH } = g
   const chart = useMemo(() => layoutChart(doc, view, lang, trees), [doc, view, lang, trees])
@@ -203,6 +205,15 @@ export function Sheet({ doc, view, lang, page, selectedId, dragId, drop, classNa
                   {l.text}
                 </text>
               ))}
+              {flagIds?.has(p.node.id) && (
+                <g className="no-print" transform={`translate(${p.w - 2} 2)`}>
+                  <title>Chybí aktuální anglický název</title>
+                  <circle r={6.5} fill="#E8A317" stroke="#FFFFFF" strokeWidth={1.5} />
+                  <text y={3.2} fontSize={9} fontWeight="bold" fill="#0E1B26" textAnchor="middle">
+                    EN
+                  </text>
+                </g>
+              )}
               {selected && (
                 <rect
                   className="no-print"

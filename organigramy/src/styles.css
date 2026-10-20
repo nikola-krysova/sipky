@@ -222,3 +222,10 @@ details.more[open] { gap: 10px; }
   .no-print { display: none; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* Hlídání anglického překladu. Upozornění jen v rozhraní, nikdy v tisku. */
+.field input.stale { border-color: var(--warning); }
+.field small.warn-text { color: #8a5d00; }
+.inline-actions { display: flex; flex-wrap: wrap; gap: 6px; text-transform: none; letter-spacing: 0; font-weight: normal; }
+.btn.small { padding: 4px 9px; font-size: 12px; }
+.statusbar .stale-link { color: #8a5d00; font-weight: bold; }

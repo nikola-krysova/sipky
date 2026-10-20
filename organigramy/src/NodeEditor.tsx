@@ -1,7 +1,8 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { childrenOf, layoutOf } from './layout'
 import { descendants, setCategory, setParent, shift } from './ops'
 import { defaultViewsFor } from './seed'
+import { enStale, translateErrorText, translateTitles, TranslateError, useTranslateAvailable } from './translate'
 import { ALL_VIEW, type ChildLayout, type OrgDoc, type OrgNode } from './types'
 
 interface Props {
@@ -26,7 +27,11 @@ export function NodeEditor({ doc, node, autoFocus, commit, onAddChild, onAddSibl
   const edit = (field: keyof OrgNode, value: string) =>
     commit(
       (d) => {
-        ;(d.nodes[node.id] as unknown as Record<string, unknown>)[field] = value || (field.startsWith('label') ? undefined : '')
+        const n = d.nodes[node.id]
+        // Hlídání anglického překladu: ke kterému českému názvu patří.
+        if (field === 'titleCs' && n.enFor === undefined && n.titleEn.trim()) n.enFor = n.titleCs
+        ;(n as unknown as Record<string, unknown>)[field] = value || (field.startsWith('label') ? undefined : '')
+        if (field === 'titleEn') n.enFor = n.titleCs
       },
       `Úprava: ${who}`,
       `edit:${node.id}`,
@@ -56,6 +61,28 @@ export function NodeEditor({ doc, node, autoFocus, commit, onAddChild, onAddSibl
     }, `Uspořádání: ${who}`)
 
   const hasKids = childrenOf(doc, node.id).length > 0
+  const canTranslate = useTranslateAvailable()
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const stale = enStale(node)
+
+  const translate = async () => {
+    setBusy(true)
+    setErr('')
+    try {
+      const res = await translateTitles(doc, [node.id])
+      const en = res[node.id]
+      if (!en) throw new TranslateError('empty')
+      commit((d) => {
+        d.nodes[node.id].titleEn = en
+        d.nodes[node.id].enFor = d.nodes[node.id].titleCs
+      }, `Překlad: ${who}`)
+    } catch (e) {
+      setErr(translateErrorText((e as TranslateError).code))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <div className="panel-body">
@@ -74,7 +101,36 @@ export function NodeEditor({ doc, node, autoFocus, commit, onAddChild, onAddSibl
       </label>
       <label className="field">
         <span>Funkce anglicky</span>
-        <input value={node.titleEn} onChange={(e) => edit('titleEn', e.target.value)} placeholder={node.titleCs} />
+        <input
+          value={node.titleEn}
+          onChange={(e) => edit('titleEn', e.target.value)}
+          placeholder={node.titleCs}
+          className={stale ? 'stale' : ''}
+        />
+        {stale && (
+          <small className="warn-text">
+            {node.titleEn.trim()
+              ? `Český název se změnil, anglický je k „${node.enFor}“.`
+              : 'Anglický název chybí, v EN verzi se zobrazí český.'}
+          </small>
+        )}
+        <span className="inline-actions">
+          {canTranslate && (
+            <button type="button" className="btn small" onClick={translate} disabled={busy || !node.titleCs.trim()}>
+              {busy ? 'Překládám…' : 'Přeložit do angličtiny'}
+            </button>
+          )}
+          {stale && node.titleEn.trim() && (
+            <button
+              type="button"
+              className="btn small"
+              onClick={() => commit((d) => (d.nodes[node.id].enFor = d.nodes[node.id].titleCs), `Překlad potvrzen: ${who}`)}
+            >
+              Anglický je v pořádku
+            </button>
+          )}
+        </span>
+        {err && <small className="warn-text">{err}</small>}
       </label>
       <label className="field">
         <span>Jméno</span>

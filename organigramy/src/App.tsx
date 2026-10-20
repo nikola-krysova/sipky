@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Canvas } from './Canvas'
 import type { HistoryEntry } from './db'
 import { createBlankDoc } from './seed'
+import { enStale, translateErrorText, translateTitles, TranslateError, useTranslateAvailable } from './translate'
 import { NodeEditor } from './NodeEditor'
 import { addChild, addSibling, deleteNode, descendants, isOrgDoc, moveNode } from './ops'
 import { HistoryPanel, PrintDialog, SettingsDialog, SheetMetaEditor, viewName, type PrintJob } from './Panels'
@@ -42,6 +43,43 @@ export default function App() {
   const [printJob, setPrintJob] = useState<PrintJob | null>(null)
 
   const selected = doc && selectedId ? doc.nodes[selectedId] : undefined
+  const canTranslate = useTranslateAvailable()
+  const [translating, setTranslating] = useState(false)
+  const staleIds = useMemo(
+    () => new Set(doc ? Object.values(doc.nodes).filter(enStale).map((n) => n.id) : []),
+    [doc],
+  )
+
+  const nextStale = () => {
+    const ids = [...staleIds]
+    if (!ids.length) return
+    const i = selectedId ? ids.indexOf(selectedId) : -1
+    setSelectedId(ids[(i + 1) % ids.length])
+    setFreshId(null)
+    setSide('edit')
+  }
+
+  const translateAll = async () => {
+    if (!doc || !staleIds.size) return
+    if (!confirm(`Přeložit do angličtiny ${staleIds.size} názvů funkcí? Výsledek můžete u každé pozice zkontrolovat a upravit.`)) return
+    setTranslating(true)
+    try {
+      const ids = [...staleIds]
+      const res: Record<string, string> = {}
+      for (let i = 0; i < ids.length; i += 40) Object.assign(res, await translateTitles(doc, ids.slice(i, i + 40)))
+      commit((d) => {
+        for (const [id, en] of Object.entries(res)) {
+          if (!d.nodes[id]) continue
+          d.nodes[id].titleEn = en
+          d.nodes[id].enFor = d.nodes[id].titleCs
+        }
+      }, `Automatický překlad ${Object.keys(res).length} názvů`)
+    } catch (e) {
+      alert(translateErrorText((e as TranslateError).code))
+    } finally {
+      setTranslating(false)
+    }
+  }
 
   const select = useCallback((id: string | null) => {
     if (ro) return
@@ -272,6 +310,7 @@ export default function App() {
               page={PREVIEW_PAGE}
               selectedId={preview ? null : selectedId}
               readOnly={!!preview || ro}
+              flagIds={preview || ro ? undefined : staleIds}
               onSelect={preview ? () => {} : select}
               onMove={(id, hint) =>
                 commit((d) => {
@@ -290,6 +329,18 @@ export default function App() {
               <span>
                 {viewName(doc, view)}, {Object.keys(doc.nodes).length} pozic celkem
               </span>
+              {!ro && staleIds.size > 0 && (
+                <>
+                  <button type="button" className="link stale-link" onClick={nextStale} title="Přejít na další">
+                    {staleIds.size === 1 ? '1 pozice' : `${staleIds.size} ${staleIds.size < 5 ? 'pozice' : 'pozic'}`} bez aktuálního EN názvu
+                  </button>
+                  {canTranslate && (
+                    <button type="button" className="link" onClick={translateAll} disabled={translating}>
+                      {translating ? 'Překládám…' : 'Přeložit všechny'}
+                    </button>
+                  )}
+                </>
+              )}
               <span className="spacer" />
               <button type="button" className="link" onClick={exportJson}>
                 Zálohovat do souboru

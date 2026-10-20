@@ -21,6 +21,8 @@ export interface OrgNode {
   order: number
   titleCs: string
   titleEn: string
+  /** Český název, ke kterému byl anglický naposledy přeložen nebo potvrzen. */
+  enFor?: string
   /** Jméno; víc jmen na samostatných řádcích. */
   name: string
   categoryId: string

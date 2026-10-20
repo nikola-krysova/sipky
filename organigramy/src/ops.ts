@@ -34,7 +34,7 @@ function blankNode(doc: OrgDoc, parentId: string | null, view: string): OrgNode 
     parentId,
     order: 0,
     titleCs: 'Nová pozice',
-    titleEn: 'New position',
+    titleEn: '',
     name: '',
     categoryId,
     views: defaultViewsFor(categoryId, doc.categories),
