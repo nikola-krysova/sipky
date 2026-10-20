@@ -31,14 +31,18 @@ framework Vite.
   Enter pozice vedle, Delete smazat, Ctrl+Z zpět, Ctrl+Y znovu.
 - **Uspořádání.** U pozice s podřízenými lze zvolit „Pod sebou“ nebo „Vedle sebe“, zvlášť
   pro celkový organigram a pro organigramy závodů.
-- **Ukládání.** Každá změna se okamžitě ukládá do prohlížeče (IndexedDB).
+- **Ukládání.** Na claude.ai (zveřejněná stránka) se každá změna ukládá do sdílené databáze
+  stránky: všichni, komu je stránka nasdílená, vidí stejný organigram a změny ostatních se
+  zobrazí hned. Upravovat mohou lidé s oprávněním Contributor nebo Editor, ostatní jen čtou.
+  Mimo claude.ai (lokální spuštění) se ukládá do prohlížeče (IndexedDB).
 - **Historie.** Každá změna se zapíše do historie (úpravy jedné pozice během dvou minut se
   sloučí). Libovolnou verzi lze zobrazit v náhledu a obnovit. Pojmenované verze
   (např. „Schváleno 11/2026“) se nikdy nepromazávají.
 - **Tisk.** Tlačítko Tisk, PDF: formát A4 nebo A3, na šířku či na výšku, česky nebo anglicky,
   každý vybraný organigram na samostatný list. Dialog ukazuje nejmenší velikost písma.
-- **Záloha.** Data jsou uložená jen v prohlížeči, ve kterém pracujete. Pro přenos na jiný
-  počítač nebo jako zálohu použijte „Zálohovat do souboru“ a „Nahrát zálohu“ (JSON).
+- **Záloha.** „Zálohovat do souboru“ a „Nahrát zálohu“ (JSON) slouží k záloze a přenosu.
+- **Souběžné úpravy.** Ukládá se celý organigram najednou; když dva lidé upravují ve stejnou
+  chvíli, platí poslední uložená změna. Předchozí stav zůstává v historii.
 
 ## Grafický manuál
 

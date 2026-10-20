@@ -171,6 +171,11 @@ details.more[open] { gap: 10px; }
 .history li.active > button:first-child { border-left-color: var(--bright); background: var(--blue-50); }
 .history .when { font-size: 12px; color: var(--gray); }
 .history .what { width: 100%; font-size: 13px; }
+.history .who { width: 100%; font-size: 12px; color: var(--gray); }
+.readonly-bar { padding: 8px 16px; background: var(--blue-50); color: var(--corporate); font-weight: bold; border-bottom: 1px solid var(--hairline); }
+.empty-state { display: grid; place-items: center; height: 100%; }
+.empty-state > div { max-width: 460px; display: flex; flex-direction: column; gap: 14px; align-items: flex-start; }
+.empty-state h1 { margin: 0; color: var(--corporate); font-size: 28px; }
 .history .badge {
   font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.1em;
   background: var(--corporate); color: var(--white); padding: 1px 6px; border-radius: 999px;

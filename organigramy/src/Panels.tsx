@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { deleteHistory, listHistory, type HistoryEntry } from './db'
+import type { Backend, HistoryEntry } from './db'
 import { enablePlant, ensureViewMeta } from './ops'
 import type { ViewTree } from './layout'
 import { fontPt, paginate } from './Sheet'
@@ -50,13 +50,17 @@ export function SheetMetaEditor({ doc, view, commit }: { doc: OrgDoc; view: stri
 const fmt = new Intl.DateTimeFormat('cs-CZ', { dateStyle: 'medium', timeStyle: 'short' })
 
 export function HistoryPanel({
+  backend,
+  readOnly,
   tick,
   previewId,
   onPreview,
   onSaveVersion,
 }: {
+  backend: Backend
+  readOnly: boolean
   tick: number
-  previewId: number | null
+  previewId: string | null
   onPreview: (e: HistoryEntry) => void
   onSaveVersion: (label: string) => void
 }) {
@@ -64,16 +68,21 @@ export function HistoryPanel({
   const [label, setLabel] = useState('')
   const [onlyNamed, setOnlyNamed] = useState(false)
   const [reload, setReload] = useState(0)
+  const [names, setNames] = useState<Record<string, string>>({})
 
   useEffect(() => {
-    listHistory().then(setEntries)
-  }, [tick, reload])
+    backend.listHistory().then(async (list) => {
+      setEntries(list)
+      const ids = [...new Set(list.map((e) => e.by).filter((x): x is string => !!x))]
+      setNames(await backend.names(ids))
+    })
+  }, [backend, tick, reload])
 
   const shown = onlyNamed ? entries.filter((e) => e.label) : entries
 
   return (
     <div className="panel-body">
-      <form
+      {!readOnly && <form
         className="inline-form"
         onSubmit={(e) => {
           e.preventDefault()
@@ -86,7 +95,7 @@ export function HistoryPanel({
         <button type="submit" className="btn primary">
           Uložit verzi
         </button>
-      </form>
+      </form>}
       <label className="check">
         <input type="checkbox" checked={onlyNamed} onChange={(e) => setOnlyNamed(e.target.checked)} />
         Jen pojmenované verze
@@ -102,14 +111,15 @@ export function HistoryPanel({
               <span className="when">{fmt.format(e.ts)}</span>
               {e.label && <span className="badge">{e.label}</span>}
               <span className="what">{e.desc}</span>
+              {e.by && <span className="who">{names[e.by] || 'Kolega'}</span>}
             </button>
-            {e.label && (
+            {e.label && !readOnly && (
               <button
                 type="button"
                 className="link small"
                 onClick={async () => {
-                  if (e.id != null && confirm(`Smazat uloženou verzi „${e.label}“?`)) {
-                    await deleteHistory(e.id)
+                  if (confirm(`Smazat uloženou verzi „${e.label}“?`)) {
+                    await backend.deleteHistory(e.id)
                     setReload((r) => r + 1)
                   }
                 }}

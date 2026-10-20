@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Canvas } from './Canvas'
 import type { HistoryEntry } from './db'
+import { createBlankDoc } from './seed'
 import { NodeEditor } from './NodeEditor'
 import { addChild, addSibling, deleteNode, descendants, isOrgDoc, moveNode } from './ops'
 import { HistoryPanel, PrintDialog, SettingsDialog, SheetMetaEditor, viewName, type PrintJob } from './Panels'
@@ -19,17 +20,35 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [freshId, setFreshId] = useState<string | null>(null)
   const [side, setSide] = useState<'edit' | 'history'>('edit')
-  const [preview, setPreview] = useState<HistoryEntry | null>(null)
+  const [preview, setPreview] = useState<{ entry: HistoryEntry; doc: OrgDoc } | null>(null)
+  const [lastByName, setLastByName] = useState('')
+  const ro = store.readOnly
+
+  useEffect(() => {
+    const b = store.backend
+    if (!b || !store.lastBy) return setLastByName('')
+    b.names([store.lastBy]).then((n) => setLastByName(store.lastBy === b.me ? '' : n[store.lastBy!] || 'kolega'))
+  }, [store.backend, store.lastBy])
+
+  const openPreview = useCallback(
+    async (entry: HistoryEntry) => {
+      const d = await store.backend?.getSnapshot(entry.id)
+      if (d) setPreview({ entry, doc: d })
+      else alert('Tato verze už není k dispozici.')
+    },
+    [store.backend],
+  )
   const [dialog, setDialog] = useState<'print' | 'settings' | null>(null)
   const [printJob, setPrintJob] = useState<PrintJob | null>(null)
 
   const selected = doc && selectedId ? doc.nodes[selectedId] : undefined
 
   const select = useCallback((id: string | null) => {
+    if (ro) return
     setSelectedId(id)
     setFreshId(null)
     if (id) setSide('edit')
-  }, [])
+  }, [ro])
 
   const add = useCallback(
     (kind: 'child' | 'sibling') => {
@@ -126,7 +145,9 @@ export default function App() {
       try {
         const data = JSON.parse(txt)
         if (!isOrgDoc(data)) throw new Error()
-        if (confirm('Nahradit současný organigram obsahem souboru? Současný stav zůstane v historii.')) {
+        if (!doc) {
+          store.create(data, `Založeno ze zálohy ${file.name}`)
+        } else if (confirm('Nahradit současný organigram obsahem souboru? Současný stav zůstane v historii.')) {
           store.replace(data, `Import ze souboru ${file.name}`)
           select(null)
         }
@@ -137,7 +158,33 @@ export default function App() {
   }
 
   if (!doc) {
-    return <div className="loading">{store.saveState === 'error' ? 'Úložiště prohlížeče není dostupné.' : 'Načítám…'}</div>
+    if (store.saveState !== 'empty') {
+      return <div className="loading">{store.saveState === 'error' ? 'Úložiště není dostupné. Zkuste stránku načíst znovu.' : 'Načítám…'}</div>
+    }
+    return (
+      <div className="empty-state">
+        <div>
+          <img src="./logo.png" alt="SANBORN" className="logo" style={{ height: 48 }} />
+          <h1>Organigram zatím neexistuje</h1>
+          {ro ? (
+            <p className="hint">Organigram ještě nikdo nezaložil. K úpravám potřebujete od vlastníka stránky oprávnění.</p>
+          ) : (
+            <>
+              <p className="hint">Založte nový organigram, nebo nahrajte zálohu ze souboru.</p>
+              <div className="panel-actions">
+                <button type="button" className="btn primary" onClick={() => store.create(createBlankDoc(), 'Založen nový organigram')}>
+                  Založit nový organigram
+                </button>
+                <label className="btn">
+                  Nahrát zálohu
+                  <input type="file" accept="application/json,.json" hidden onChange={(e) => e.target.files?.[0] && importJson(e.target.files[0])} />
+                </label>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    )
   }
 
   const views = [ALL_VIEW, ...doc.categories.filter((c) => c.isPlant).map((c) => c.id)]
@@ -175,15 +222,19 @@ export default function App() {
               EN
             </button>
           </div>
-          <button type="button" className="btn ghost" onClick={store.undo} disabled={!store.canUndo} title="Ctrl+Z">
-            Zpět
-          </button>
-          <button type="button" className="btn ghost" onClick={store.redo} disabled={!store.canRedo} title="Ctrl+Y">
-            Znovu
-          </button>
-          <button type="button" className="btn ghost" onClick={() => setDialog('settings')}>
-            Barvy a závody
-          </button>
+          {!ro && (
+            <>
+              <button type="button" className="btn ghost" onClick={store.undo} disabled={!store.canUndo} title="Ctrl+Z">
+                Zpět
+              </button>
+              <button type="button" className="btn ghost" onClick={store.redo} disabled={!store.canRedo} title="Ctrl+Y">
+                Znovu
+              </button>
+              <button type="button" className="btn ghost" onClick={() => setDialog('settings')}>
+                Barvy a závody
+              </button>
+            </>
+          )}
           <button type="button" className="btn primary" onClick={() => setDialog('print')}>
             Tisk, PDF
           </button>
@@ -191,23 +242,24 @@ export default function App() {
 
         <main className="main">
           <section className="stage">
+            {ro && <div className="readonly-bar">Jen pro čtení. K úpravám potřebujete od vlastníka stránky oprávnění Contributor nebo Editor.</div>}
             {preview && (
               <div className="preview-bar">
                 <span>
-                  Náhled verze z {new Date(preview.ts).toLocaleString('cs-CZ')}
-                  {preview.label ? `, ${preview.label}` : ''}
+                  Náhled verze z {new Date(preview.entry.ts).toLocaleString('cs-CZ')}
+                  {preview.entry.label ? `, ${preview.entry.label}` : ''}
                 </span>
-                <button
+                {!ro && <button
                   type="button"
                   className="btn primary"
                   onClick={() => {
-                    store.replace(structuredClone(preview.doc), `Obnovena verze z ${new Date(preview.ts).toLocaleString('cs-CZ')}`)
+                    store.replace(structuredClone(preview.doc), `Obnovena verze z ${new Date(preview.entry.ts).toLocaleString('cs-CZ')}`)
                     setPreview(null)
                     select(null)
                   }}
                 >
                   Obnovit tuto verzi
-                </button>
+                </button>}
                 <button type="button" className="btn" onClick={() => setPreview(null)}>
                   Zavřít náhled
                 </button>
@@ -219,7 +271,7 @@ export default function App() {
               lang={lang}
               page={PREVIEW_PAGE}
               selectedId={preview ? null : selectedId}
-              readOnly={!!preview}
+              readOnly={!!preview || ro}
               onSelect={preview ? () => {} : select}
               onMove={(id, hint) =>
                 commit((d) => {
@@ -233,7 +285,7 @@ export default function App() {
                   ? 'Ukládám…'
                   : store.saveState === 'error'
                     ? 'Uložení selhalo'
-                    : `Uloženo${store.savedAt ? ` ${timeFmt.format(store.savedAt)}` : ''}`}
+                    : `${store.backend?.kind === 'cloud' ? 'Uloženo pro všechny' : 'Uloženo'}${store.savedAt ? ` ${timeFmt.format(store.savedAt)}` : ''}${lastByName ? `, změnu udělal(a) ${lastByName}` : ''}`}
               </span>
               <span>
                 {viewName(doc, view)}, {Object.keys(doc.nodes).length} pozic celkem
@@ -242,7 +294,7 @@ export default function App() {
               <button type="button" className="link" onClick={exportJson}>
                 Zálohovat do souboru
               </button>
-              <label className="link">
+              {!ro && <label className="link">
                 Nahrát zálohu
                 <input
                   type="file"
@@ -254,7 +306,7 @@ export default function App() {
                     e.target.value = ''
                   }}
                 />
-              </label>
+              </label>}
             </div>
           </section>
 
@@ -267,11 +319,13 @@ export default function App() {
                 Historie
               </button>
             </div>
-            {side === 'history' ? (
+            {side === 'history' || ro ? (
               <HistoryPanel
                 tick={store.historyTick}
-                previewId={preview?.id ?? null}
-                onPreview={setPreview}
+                previewId={preview?.entry.id ?? null}
+                onPreview={openPreview}
+                backend={store.backend!}
+                readOnly={ro}
                 onSaveVersion={store.saveNamedVersion}
               />
             ) : selected ? (

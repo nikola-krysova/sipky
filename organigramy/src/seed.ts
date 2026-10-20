@@ -225,3 +225,10 @@ export function createSeedDoc(): OrgDoc {
   for (const c of DEFAULT_CATEGORIES.filter((c) => c.isPlant)) views[c.id] = defaultViewMeta(c, codes[c.id])
   return { schema: 1, categories: DEFAULT_CATEGORIES, nodes, views }
 }
+
+/** Prázdný organigram jen s generálním ředitelem. */
+export function createBlankDoc(): OrgDoc {
+  const seed = createSeedDoc()
+  const root = Object.values(seed.nodes).find((n) => !n.parentId)!
+  return { ...seed, nodes: { [root.id]: { ...root, name: '' } } }
+}
