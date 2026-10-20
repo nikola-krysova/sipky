@@ -163,13 +163,17 @@ export function PrintDialog({
   lang,
   onClose,
   onPrint,
+  onPdf,
 }: {
   doc: OrgDoc
   view: string
   lang: Lang
   onClose: () => void
   onPrint: (job: PrintJob) => void
+  onPdf: (job: PrintJob, filename: string) => Promise<void>
 }) {
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
   const allViews = [ALL_VIEW, ...doc.categories.filter((c) => c.isPlant).map((c) => c.id)]
   const [format, setFormat] = useState<PageFormat>('A3')
   const [orient, setOrient] = useState<OrientChoice>('auto')
@@ -177,31 +181,57 @@ export function PrintDialog({
   const [plang, setLang] = useState<Lang>(lang)
   const [views, setViews] = useState<string[]>([view])
 
-  // Jeden tisk má jednu orientaci (tiskárny ani PDF neumí spolehlivě míchat).
   // Automaticky = orientace s menším počtem listů, při shodě s větším písmem.
-  const plans = useMemo(() => {
+  // V PDF má každý organigram svou orientaci, tisk z prohlížeče umí jen jednu pro všechny.
+  const best = <T extends { count: number; pt: number }>(cands: T[]): T => [...cands].sort((x, y) => x.count - y.count || y.pt - x.pt)[0]
+  const { perView, common } = useMemo(() => {
     const orients = orient === 'auto' ? (['landscape', 'portrait'] as const) : [orient]
-    const variants = orients.map((o) => {
-      const page: PageSpec = { format, orientation: o }
-      const map = new Map(allViews.map((v) => [v, planView(doc, v, plang, page, minPt)]))
-      const chosen = views.length ? views : allViews
-      const count = chosen.reduce((n, v) => n + map.get(v)!.pages.length, 0)
-      const pt = Math.min(...chosen.map((v) => map.get(v)!.pt))
-      return { map, count, pt }
-    })
-    variants.sort((x, y) => x.count - y.count || y.pt - x.pt)
-    return variants[0].map
+    const byOrient = orients.map((o) => new Map(allViews.map((v) => [v, planView(doc, v, plang, { format, orientation: o }, minPt)])))
+    const perView = new Map(
+      allViews.map((v) => {
+        const opts = byOrient.map((m) => m.get(v)!)
+        return [v, best(opts.map((p) => ({ ...p, count: p.pages.length })))] as const
+      }),
+    )
+    const chosen = views.length ? views : allViews
+    const common = best(
+      byOrient.map((m) => ({
+        map: m,
+        count: chosen.reduce((n, v) => n + m.get(v)!.pages.length, 0),
+        pt: Math.min(...chosen.map((v) => m.get(v)!.pt)),
+      })),
+    ).map
+    return { perView, common }
   }, [doc, plang, format, orient, minPt, allViews.join(), views.join()])
+  const plans = perView
 
-  const print = () => {
+  const buildJob = (mixed: boolean): PrintJob => {
     const sheets: PrintSheet[] = []
     for (const v of views) {
-      const plan = plans.get(v)!
+      const plan = (mixed ? perView : common).get(v)!
       plan.pages.forEach((trees, i) =>
         sheets.push({ view: v, page: plan.page, trees, part: plan.pages.length > 1 ? `${i + 1}/${plan.pages.length}` : undefined }),
       )
     }
-    onPrint({ lang: plang, sheets })
+    return { lang: plang, sheets }
+  }
+
+  const pdf = async () => {
+    setBusy(true)
+    setErr('')
+    try {
+      const names = views.map((v) => (v === ALL_VIEW ? 'SANBORN' : viewName(doc, v)))
+      const base = names.length === 1 ? names[0] : 'organigramy'
+      const filename = `${base} ${format} ${plang.toUpperCase()} ${new Date().toISOString().slice(0, 10)}.pdf`
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/\s+/g, '_')
+      await onPdf(buildJob(true), filename)
+    } catch {
+      setErr('PDF se nepodařilo vytvořit. Zkuste to znovu.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   const seg = <T,>(value: T, set: (v: T) => void, opts: [T, string][]) => (
@@ -223,12 +253,7 @@ export function PrintDialog({
       <div className="field">
         <span>Orientace</span>
         {seg(orient, setOrient, [['auto', 'Automaticky'], ['landscape', 'Na šířku'], ['portrait', 'Na výšku']])}
-        {orient === 'auto' && (
-          <small>
-            Vybráno: {plans.get(allViews[0])!.page.orientation === 'landscape' ? 'na šířku' : 'na výšku'}, vychází na
-            méně listů.
-          </small>
-        )}
+        {orient === 'auto' && <small>Každý organigram dostane orientaci, na kterou vyjde méně listů.</small>}
       </div>
       <div className="field">
         <span>Velikost písma</span>
@@ -257,20 +282,29 @@ export function PrintDialog({
                 />
                 {viewName(doc, v)}
                 <small className={minPt && plan.pt < minPt - 0.01 ? 'warn' : ''}>
-                  {n} {n === 1 ? 'list' : n < 5 ? 'listy' : 'listů'}, písmo {pts(plan.pt)} pt
+                  {n} {n === 1 ? 'list' : n < 5 ? 'listy' : 'listů'}
+                  {orient === 'auto' ? (plan.page.orientation === 'landscape' ? ' na šířku' : ' na výšku') : ''}, písmo{' '}
+                  {pts(plan.pt)} pt
                 </small>
               </label>
             )
           })}
         </div>
       </div>
-      <p className="hint">V tiskovém dialogu prohlížeče zvolte tiskárnu, nebo Uložit jako PDF. Okraje nastavte na Žádné.</p>
+      <p className="hint">
+        Stáhnout PDF vytvoří vektorový soubor přesně ve formátu {format}, připravený pro tiskárnu nebo tiskárnu
+        reprografie. V tiskárně zvolte skutečnou velikost (100 %).
+      </p>
+      {err && <p className="hint warn-text">{err}</p>}
       <div className="modal-actions">
         <button type="button" className="btn" onClick={onClose}>
           Zrušit
         </button>
-        <button type="button" className="btn primary" disabled={!views.length} onClick={print}>
-          Tisknout
+        <button type="button" className="btn" disabled={!views.length || busy} onClick={() => onPrint(buildJob(false))} title="Tiskový dialog prohlížeče">
+          Tisk z prohlížeče
+        </button>
+        <button type="button" className="btn primary" disabled={!views.length || busy} onClick={pdf}>
+          {busy ? 'Připravuji PDF…' : 'Stáhnout PDF'}
         </button>
       </div>
     </Modal>

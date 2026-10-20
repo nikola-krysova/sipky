@@ -6,6 +6,7 @@ import { enStale, translateErrorText, translateTitles, TranslateError, useTransl
 import { NodeEditor } from './NodeEditor'
 import { addChild, addSibling, deleteNode, descendants, isOrgDoc, moveNode } from './ops'
 import { HistoryPanel, PrintDialog, SettingsDialog, SheetMetaEditor, viewName, type PrintJob } from './Panels'
+import { buildPdf, saveFile } from './pdf'
 import { Sheet } from './Sheet'
 import { useOrgStore } from './store'
 import { ALL_VIEW, pageSize, type Lang, type OrgDoc, type PageSpec } from './types'
@@ -171,11 +172,9 @@ export default function App() {
   const exportJson = () => {
     if (!doc) return
     const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `organigram-sanborn-${new Date().toISOString().slice(0, 10)}.json`
-    a.click()
-    URL.revokeObjectURL(a.href)
+    saveFile(`organigram-sanborn-${new Date().toISOString().slice(0, 10)}.json`, blob).catch(() =>
+      alert('Zálohu se nepodařilo uložit.'),
+    )
   }
 
   const importJson = (file: File) => {
@@ -406,6 +405,9 @@ export default function App() {
           onPrint={(job) => {
             setDialog(null)
             setPrintJob(job)
+          }}
+          onPdf={async (job, filename) => {
+            await saveFile(filename, await buildPdf(doc, job))
           }}
         />
       )}
