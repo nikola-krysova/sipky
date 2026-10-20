@@ -97,7 +97,7 @@ export default function App() {
 
   useEffect(() => {
     if (!printJob) return
-    const { w, h } = pageSize(printJob.page)
+    const { w, h } = pageSize(printJob.sheets[0].page)
     const style = document.createElement('style')
     style.textContent = `@page { size: ${w}mm ${h}mm; margin: 0 }`
     document.head.appendChild(style)
@@ -308,11 +308,19 @@ export default function App() {
 
       {printJob && (
         <div className="print-root">
-          {printJob.views.map((v) => {
-            const { w, h } = pageSize(printJob.page)
+          {printJob.sheets.map((sh, i) => {
+            const { w, h } = pageSize(sh.page)
             return (
-              <div key={v} className="print-page" style={{ width: `${w}mm`, height: `${h}mm` }}>
-                <Sheet doc={doc} view={v} lang={printJob.lang} page={printJob.page} style={{ width: '100%', height: '100%' }} />
+              <div key={i} className="print-page" style={{ width: `${w}mm`, height: `${h}mm` }}>
+                <Sheet
+                  doc={doc}
+                  view={sh.view}
+                  lang={printJob.lang}
+                  page={sh.page}
+                  trees={sh.trees}
+                  part={sh.part}
+                  style={{ width: '100%', height: '100%' }}
+                />
               </div>
             )
           })}

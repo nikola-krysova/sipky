@@ -2,17 +2,17 @@ import { ALL_VIEW, type Category, type ChildLayout, type Lang, type OrgDoc, type
 
 // Rozměry v jednotkách grafu (před zmenšením na list).
 export const NODE_W = 132
-const PAD_X = 7
-const PAD_Y = 7
-const FS_TITLE = 8.6
-const FS_NAME = 8.6
-const FS_LABEL = 7.4
+const PAD_X = 6
+const PAD_Y = 5
+const FS_TITLE = 10
+const FS_NAME = 10
+const FS_LABEL = 9
 const LH = 1.22
-const MIN_H = 40
-const INDENT = 20
-const V_GAP = 9
-const H_GAP = 18
-const BUS = 14
+const MIN_H = 36
+const INDENT = 18
+const V_GAP = 7
+const H_GAP = 14
+const BUS = 12
 
 export const FONT = 'Arial, "Helvetica Neue", Helvetica, sans-serif'
 export const FONT_SIZES = { title: FS_TITLE, name: FS_NAME, label: FS_LABEL }
@@ -211,8 +211,8 @@ function place(s: Sized, x0: number, y0: number, doc: OrgDoc, out: ChartLayout) 
   }
 }
 
-export function layoutChart(doc: OrgDoc, view: string, lang: Lang): ChartLayout {
-  const roots = buildViewTree(doc, view).map((t) => size(t, doc, view, lang, true))
+export function layoutChart(doc: OrgDoc, view: string, lang: Lang, trees?: ViewTree[]): ChartLayout {
+  const roots = (trees ?? buildViewTree(doc, view)).map((t) => size(t, doc, view, lang, true))
   const out: ChartLayout = { nodes: [], lines: [], width: 0, height: 0 }
   let x = 0
   for (const r of roots) {

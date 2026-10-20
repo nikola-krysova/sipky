@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { FONT, FONT_SIZES, layoutChart, NODE_W } from './layout'
+import { buildViewTree, FONT, FONT_SIZES, layoutChart, NODE_W, type ViewTree } from './layout'
 import { ALL_VIEW, pageSize, type Lang, type OrgDoc, type PageSpec } from './types'
 
 export const BRAND = {
@@ -27,6 +27,10 @@ interface Props {
   drop?: DropHint | null
   className?: string
   style?: React.CSSProperties
+  /** Část organigramu pro tisk na víc listů. */
+  trees?: ViewTree[]
+  /** Označení listu, např. „2/3“. */
+  part?: string
 }
 
 const PT_PER_MM = 72 / 25.4
@@ -50,15 +54,52 @@ function chartScale(g: ReturnType<typeof sheetGeometry>, chart: { width: number;
 }
 
 /** Nejmenší výška písma na vytištěném listu v bodech. */
-export function minFontPt(doc: OrgDoc, view: string, lang: Lang, page: PageSpec): number {
-  const s = chartScale(sheetGeometry(page), layoutChart(doc, view, lang))
+export function fontPt(doc: OrgDoc, view: string, lang: Lang, page: PageSpec, trees?: ViewTree[]): number {
+  const s = chartScale(sheetGeometry(page), layoutChart(doc, view, lang, trees))
   return FONT_SIZES.label * s * PT_PER_MM
 }
 
-export function Sheet({ doc, view, lang, page, selectedId, dragId, drop, className, style }: Props) {
+function chainTo(path: ViewTree[], subset: ViewTree[]): ViewTree[] {
+  if (!path.length) return subset
+  let t: ViewTree = { node: path[path.length - 1].node, children: subset }
+  for (let i = path.length - 2; i >= 0; i--) t = { node: path[i].node, children: [t] }
+  return [t]
+}
+
+/**
+ * Rozdělí organigram na listy tak, aby písmo nebylo menší než minPt.
+ * Každý list nese cestu od generálního ředitele a část podřízených; větev,
+ * která se nevejde ani sama, se dělí o úroveň níž.
+ */
+export function paginate(doc: OrgDoc, view: string, lang: Lang, page: PageSpec, minPt: number | null): ViewTree[][] {
+  const roots = buildViewTree(doc, view)
+  if (minPt == null) return [roots]
+  const fits = (trees: ViewTree[]) => fontPt(doc, view, lang, page, trees) >= minPt - 0.01
+  if (fits(roots)) return [roots]
+  const pages: ViewTree[][] = []
+  const split = (path: ViewTree[], kids: ViewTree[]) => {
+    let cur: ViewTree[] = []
+    for (const k of kids) {
+      if (fits(chainTo(path, [...cur, k]))) {
+        cur.push(k)
+        continue
+      }
+      if (cur.length) pages.push(chainTo(path, cur))
+      cur = []
+      if (fits(chainTo(path, [k]))) cur = [k]
+      else if (k.children.length) split([...path, k], k.children)
+      else pages.push(chainTo(path, [k]))
+    }
+    if (cur.length) pages.push(chainTo(path, cur))
+  }
+  split([], roots)
+  return pages
+}
+
+export function Sheet({ doc, view, lang, page, selectedId, dragId, drop, className, style, trees, part }: Props) {
   const g = sheetGeometry(page)
   const { w, h, k, m, barH } = g
-  const chart = useMemo(() => layoutChart(doc, view, lang), [doc, view, lang])
+  const chart = useMemo(() => layoutChart(doc, view, lang, trees), [doc, view, lang, trees])
   const meta = doc.views[view] ?? doc.views[ALL_VIEW]
   const title = lang === 'cs' ? meta.titleCs : meta.titleEn
   const version = lang === 'cs' ? meta.versionCs : meta.versionEn
@@ -195,7 +236,7 @@ export function Sheet({ doc, view, lang, page, selectedId, dragId, drop, classNa
 
       <image href="./logo.png" x={m} y={h - m - logoH} width={logoW} height={logoH} />
       <text x={w - m} y={h - m - 5 * k} fontSize={3.4 * k} fontWeight="bold" fill={BRAND.black} textAnchor="end">
-        {meta.docCode}
+        {part ? `${meta.docCode}, ${lang === 'cs' ? 'list' : 'page'} ${part}` : meta.docCode}
       </text>
       <text x={w - m} y={h - m} fontSize={2.8 * k} fill={BRAND.gray} textAnchor="end">
         {approved}

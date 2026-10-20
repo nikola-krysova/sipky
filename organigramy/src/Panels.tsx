@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { deleteHistory, listHistory, type HistoryEntry } from './db'
 import { enablePlant, ensureViewMeta } from './ops'
-import { minFontPt } from './Sheet'
-import { ALL_VIEW, type Category, type Lang, type OrgDoc, type PageSpec, type ViewMeta } from './types'
+import type { ViewTree } from './layout'
+import { fontPt, paginate } from './Sheet'
+import { ALL_VIEW, type Category, type Lang, type Orientation, type OrgDoc, type PageFormat, type PageSpec, type ViewMeta } from './types'
 
 type Commit = (fn: (d: OrgDoc) => void, desc: string, key?: string) => void
 
@@ -124,11 +125,27 @@ export function HistoryPanel({
   )
 }
 
-export interface PrintJob {
+export interface PrintSheet {
+  view: string
   page: PageSpec
-  lang: Lang
-  views: string[]
+  trees: ViewTree[]
+  part?: string
 }
+
+export interface PrintJob {
+  lang: Lang
+  sheets: PrintSheet[]
+}
+
+type OrientChoice = 'auto' | Orientation
+
+function planView(doc: OrgDoc, view: string, lang: Lang, page: PageSpec, minPt: number | null) {
+  const pages = paginate(doc, view, lang, page, minPt)
+  const pt = Math.min(...pages.map((t) => fontPt(doc, view, lang, page, t)))
+  return { page, pages, pt }
+}
+
+const pts = (n: number) => n.toFixed(1).replace('.', ',')
 
 export function PrintDialog({
   doc,
@@ -144,49 +161,83 @@ export function PrintDialog({
   onPrint: (job: PrintJob) => void
 }) {
   const allViews = [ALL_VIEW, ...doc.categories.filter((c) => c.isPlant).map((c) => c.id)]
-  const [page, setPage] = useState<PageSpec>({ format: 'A3', orientation: 'landscape' })
+  const [format, setFormat] = useState<PageFormat>('A3')
+  const [orient, setOrient] = useState<OrientChoice>('auto')
+  const [minPt, setMinPt] = useState<number | null>(7)
   const [plang, setLang] = useState<Lang>(lang)
   const [views, setViews] = useState<string[]>([view])
+
+  // Jeden tisk má jednu orientaci (tiskárny ani PDF neumí spolehlivě míchat).
+  // Automaticky = orientace s menším počtem listů, při shodě s větším písmem.
+  const plans = useMemo(() => {
+    const orients = orient === 'auto' ? (['landscape', 'portrait'] as const) : [orient]
+    const variants = orients.map((o) => {
+      const page: PageSpec = { format, orientation: o }
+      const map = new Map(allViews.map((v) => [v, planView(doc, v, plang, page, minPt)]))
+      const chosen = views.length ? views : allViews
+      const count = chosen.reduce((n, v) => n + map.get(v)!.pages.length, 0)
+      const pt = Math.min(...chosen.map((v) => map.get(v)!.pt))
+      return { map, count, pt }
+    })
+    variants.sort((x, y) => x.count - y.count || y.pt - x.pt)
+    return variants[0].map
+  }, [doc, plang, format, orient, minPt, allViews.join(), views.join()])
+
+  const print = () => {
+    const sheets: PrintSheet[] = []
+    for (const v of views) {
+      const plan = plans.get(v)!
+      plan.pages.forEach((trees, i) =>
+        sheets.push({ view: v, page: plan.page, trees, part: plan.pages.length > 1 ? `${i + 1}/${plan.pages.length}` : undefined }),
+      )
+    }
+    onPrint({ lang: plang, sheets })
+  }
+
+  const seg = <T,>(value: T, set: (v: T) => void, opts: [T, string][]) => (
+    <div className="seg">
+      {opts.map(([v, label]) => (
+        <button type="button" key={String(v)} className={value === v ? 'active' : ''} onClick={() => set(v)}>
+          {label}
+        </button>
+      ))}
+    </div>
+  )
 
   return (
     <Modal title="Tisk a PDF" onClose={onClose}>
       <div className="field">
         <span>Formát</span>
-        <div className="seg">
-          {(['A4', 'A3'] as const).map((f) => (
-            <button type="button" key={f} className={page.format === f ? 'active' : ''} onClick={() => setPage({ ...page, format: f })}>
-              {f}
-            </button>
-          ))}
-        </div>
+        {seg(format, setFormat, [['A4', 'A4'], ['A3', 'A3']])}
       </div>
       <div className="field">
         <span>Orientace</span>
-        <div className="seg">
-          <button type="button" className={page.orientation === 'landscape' ? 'active' : ''} onClick={() => setPage({ ...page, orientation: 'landscape' })}>
-            Na šířku
-          </button>
-          <button type="button" className={page.orientation === 'portrait' ? 'active' : ''} onClick={() => setPage({ ...page, orientation: 'portrait' })}>
-            Na výšku
-          </button>
-        </div>
+        {seg(orient, setOrient, [['auto', 'Automaticky'], ['landscape', 'Na šířku'], ['portrait', 'Na výšku']])}
+        {orient === 'auto' && (
+          <small>
+            Vybráno: {plans.get(allViews[0])!.page.orientation === 'landscape' ? 'na šířku' : 'na výšku'}, vychází na
+            méně listů.
+          </small>
+        )}
+      </div>
+      <div className="field">
+        <span>Velikost písma</span>
+        {seg(minPt, setMinPt, [[7, 'Nejméně 7 pt'], [8, 'Nejméně 8 pt'], [null, 'Vše na jeden list']])}
+        <small>
+          Když se organigram při zvoleném písmu nevejde na jeden list, rozdělí se po větvích na víc listů. Každý list
+          začíná generálním ředitelem, aby bylo vidět zařazení.
+        </small>
       </div>
       <div className="field">
         <span>Jazyk</span>
-        <div className="seg">
-          <button type="button" className={plang === 'cs' ? 'active' : ''} onClick={() => setLang('cs')}>
-            Česky
-          </button>
-          <button type="button" className={plang === 'en' ? 'active' : ''} onClick={() => setLang('en')}>
-            Anglicky
-          </button>
-        </div>
+        {seg(plang, setLang, [['cs', 'Česky'], ['en', 'Anglicky']])}
       </div>
       <div className="field">
-        <span>Organigramy, každý na samostatný list</span>
+        <span>Organigramy</span>
         <div className="checks column">
           {allViews.map((v) => {
-            const pt = minFontPt(doc, v, plang, page)
+            const plan = plans.get(v)!
+            const n = plan.pages.length
             return (
               <label key={v} className="check">
                 <input
@@ -195,22 +246,20 @@ export function PrintDialog({
                   onChange={(e) => setViews(e.target.checked ? allViews.filter((x) => x === v || views.includes(x)) : views.filter((x) => x !== v))}
                 />
                 {viewName(doc, v)}
-                <small className={pt < 4 ? 'warn' : ''}>nejmenší písmo {pt.toFixed(1).replace('.', ',')} pt</small>
+                <small className={minPt && plan.pt < minPt - 0.01 ? 'warn' : ''}>
+                  {n} {n === 1 ? 'list' : n < 5 ? 'listy' : 'listů'}, písmo {pts(plan.pt)} pt
+                </small>
               </label>
             )
           })}
         </div>
-        <small>
-          Velký organigram se zmenší, aby se vešel na list. Pokud je písmo pod 4 pt, zvolte A3 nebo přepněte část
-          podřízených na uspořádání pod sebou.
-        </small>
       </div>
       <p className="hint">V tiskovém dialogu prohlížeče zvolte tiskárnu, nebo Uložit jako PDF. Okraje nastavte na Žádné.</p>
       <div className="modal-actions">
         <button type="button" className="btn" onClick={onClose}>
           Zrušit
         </button>
-        <button type="button" className="btn primary" disabled={!views.length} onClick={() => onPrint({ page, lang: plang, views })}>
+        <button type="button" className="btn primary" disabled={!views.length} onClick={print}>
           Tisknout
         </button>
       </div>
