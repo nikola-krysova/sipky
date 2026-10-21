@@ -189,7 +189,7 @@ const TREE: S = ['Generální ředitel', 'CEO', 'Jan Čáp', 'group', [
     ['Kapacitní kooperace', 'Capacity Subcontracting', '', 'group', [
       ['Kapacitní kooperace', 'Capacity Subcontracting', 'Lukáš Sosík', 'brno'],
     ]],
-  ], { views: ['vm', 'zn'] }],
+  ]],
 ], H]
 
 export function defaultViewsFor(categoryId: string, categories: Category[]): string[] {
