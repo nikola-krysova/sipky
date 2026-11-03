@@ -229,3 +229,30 @@ details.more[open] { gap: 10px; }
 .inline-actions { display: flex; flex-wrap: wrap; gap: 6px; text-transform: none; letter-spacing: 0; font-weight: normal; }
 .btn.small { padding: 4px 9px; font-size: 12px; }
 .statusbar .stale-link { color: #8a5d00; font-weight: bold; }
+
+/* Komentáře: výrazné na obrazovce, nikdy v tisku (.no-print, PDF je kreslí bez nich). */
+.btn.notes-btn.has-open { background: #d2363b; border-color: #d2363b; color: var(--white); }
+.btn.notes-btn.has-open:hover { background: #b02a2f; border-color: #b02a2f; }
+.fresh-note {
+  display: flex; align-items: center; gap: 10px; padding: 8px 16px;
+  background: #fdecec; color: #7a1d20; font-weight: bold; border-bottom: 1px solid #f3c2c4;
+}
+.fresh-note span { flex: 1; }
+.node-notes { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--hairline); border-radius: 4px; background: var(--light); }
+.node-notes.has-open { border-color: #d2363b; background: #fff6f6; }
+.node-notes-title { font-weight: bold; text-transform: uppercase; letter-spacing: 0.2em; font-size: 11px; color: var(--corporate); display: flex; gap: 8px; align-items: baseline; }
+.node-notes.has-open .node-notes-title { color: #b02a2f; }
+.node-notes-title small { text-transform: none; letter-spacing: 0; font-weight: normal; color: var(--gray); }
+.node-notes-for { font-weight: bold; color: var(--corporate); }
+.notes-side .panel-body { padding: 0; overflow: visible; }
+.notes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.note { background: var(--white); border: 1px solid var(--hairline); border-left: 3px solid #d2363b; border-radius: 4px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
+.note.resolved { border-left-color: var(--hairline); opacity: 0.75; }
+.note-head { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--gray); }
+.note-head strong { color: var(--black); }
+.note-target { text-align: left; font-size: 12px; }
+.note-text { margin: 0; white-space: pre-wrap; font-size: 13px; }
+.note-actions { display: flex; align-items: center; gap: 8px; }
+.note-add { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.note-add textarea { width: 100%; border: 1.5px solid var(--hairline); border-radius: 4px; padding: 7px 9px; resize: vertical; font: inherit; }
+.note-add textarea:focus { outline: none; border-color: var(--bright); }

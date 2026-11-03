@@ -13,13 +13,15 @@ interface Props {
   onAddChild: () => void
   onAddSibling: () => void
   onDelete: () => void
+  /** Komentáře k pozici, zobrazené nahoře v panelu. */
+  children?: React.ReactNode
 }
 
 function nodeCaption(n: OrgNode) {
   return [n.titleCs, n.name.replace(/\n/g, ', ')].filter(Boolean).join(', ')
 }
 
-export function NodeEditor({ doc, node, autoFocus, commit, onAddChild, onAddSibling, onDelete }: Props) {
+export function NodeEditor({ doc, node, autoFocus, commit, onAddChild, onAddSibling, onDelete, children }: Props) {
   const plants = doc.categories.filter((c) => c.isPlant)
   const cat = doc.categories.find((c) => c.id === node.categoryId)
   const who = node.name.split('\n')[0] || node.titleCs
@@ -94,6 +96,8 @@ export function NodeEditor({ doc, node, autoFocus, commit, onAddChild, onAddSibl
           + Vedle
         </button>
       </div>
+
+      {children}
 
       <label className="field">
         <span>Funkce česky</span>

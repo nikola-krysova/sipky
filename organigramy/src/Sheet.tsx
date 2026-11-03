@@ -33,6 +33,8 @@ interface Props {
   part?: string
   /** Pozice s chybějícím nebo zastaralým anglickým názvem (značka jen na obrazovce). */
   flagIds?: Set<string>
+  /** Počet nevyřešených komentářů u pozice (značka jen na obrazovce). */
+  noteCounts?: Map<string, number>
 }
 
 const PT_PER_MM = 72 / 25.4
@@ -98,7 +100,7 @@ export function paginate(doc: OrgDoc, view: string, lang: Lang, page: PageSpec, 
   return pages
 }
 
-export function Sheet({ doc, view, lang, page, selectedId, dragId, drop, className, style, trees, part, flagIds }: Props) {
+export function Sheet({ doc, view, lang, page, selectedId, dragId, drop, className, style, trees, part, flagIds, noteCounts }: Props) {
   const g = sheetGeometry(page)
   const { w, h, k, m, barH } = g
   const chart = useMemo(() => layoutChart(doc, view, lang, trees), [doc, view, lang, trees])
@@ -205,6 +207,28 @@ export function Sheet({ doc, view, lang, page, selectedId, dragId, drop, classNa
                   {l.text}
                 </text>
               ))}
+              {!!noteCounts?.get(p.node.id) && (
+                <rect
+                  className="no-print"
+                  x={-3}
+                  y={-3}
+                  width={p.w + 6}
+                  height={p.h + 6}
+                  rx={8}
+                  fill="none"
+                  stroke="#D2363B"
+                  strokeWidth={3}
+                />
+              )}
+              {!!noteCounts?.get(p.node.id) && (
+                <g className="no-print note-badge" transform="translate(4 2) scale(1.5)">
+                  <title>Nevyřešené komentáře</title>
+                  <path d="M-9 -8 h18 a3 3 0 0 1 3 3 v9 a3 3 0 0 1 -3 3 h-10 l-5 5 v-5 h-3 a3 3 0 0 1 -3 -3 v-9 a3 3 0 0 1 3 -3 z" fill="#D2363B" stroke="#FFFFFF" strokeWidth={1.5} />
+                  <text y={2.6} fontSize={9} fontWeight="bold" fill="#FFFFFF" textAnchor="middle">
+                    {noteCounts.get(p.node.id)}
+                  </text>
+                </g>
+              )}
               {flagIds?.has(p.node.id) && (
                 <g className="no-print" transform={`translate(${p.w - 2} 2)`}>
                   <title>Chybí aktuální anglický název</title>

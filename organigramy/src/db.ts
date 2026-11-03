@@ -15,6 +15,20 @@ export interface HistoryEntry {
   by?: string
 }
 
+/** Komentář k pozici (nodeId) nebo k celému organigramu (nodeId null). Nikdy se netiskne. */
+export interface Note {
+  id: string
+  nodeId: string | null
+  /** Pohled, ve kterém komentář vznikl ('all' nebo závod). */
+  view: string
+  text: string
+  ts: number
+  by?: string
+  resolved?: boolean
+  resolvedBy?: string
+  resolvedTs?: number
+}
+
 export interface RemoteChange {
   doc: OrgDoc
   by?: string
@@ -37,6 +51,14 @@ export interface Backend {
   pruneHistory(): Promise<void>
   /** Jména lidí podle id; neznámé id vrací "". */
   names(ids: string[]): Promise<Record<string, string>>
+  /** Komentáře: živý seznam (nejnovější první). */
+  subscribeNotes(fn: (notes: Note[]) => void): () => void
+  addNote(n: Omit<Note, 'id' | 'by' | 'ts'>): Promise<void>
+  setNoteResolved(id: string, resolved: boolean): Promise<void>
+}
+
+export function newNoteId(): string {
+  return `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`
 }
 
 const MAX_HISTORY = 200
@@ -60,12 +82,17 @@ let dbPromise: Promise<IDBDatabase> | null = null
 function open(): Promise<IDBDatabase> {
   if (!dbPromise) {
     dbPromise = new Promise((resolve, reject) => {
-      const req = indexedDB.open(DB_NAME, 1)
+      const req = indexedDB.open(DB_NAME, 2)
       req.onupgradeneeded = () => {
         const db = req.result
-        db.createObjectStore('state')
-        db.createObjectStore('history', { keyPath: 'id' })
-        db.createObjectStore('snapshots')
+        for (const [name, opts] of [
+          ['state', undefined],
+          ['history', { keyPath: 'id' }],
+          ['snapshots', undefined],
+          ['notes', { keyPath: 'id' }],
+        ] as const) {
+          if (!db.objectStoreNames.contains(name)) db.createObjectStore(name, opts)
+        }
       }
       req.onsuccess = () => resolve(req.result)
       req.onerror = () => reject(req.error)
@@ -85,6 +112,8 @@ function tx<T>(store: string, mode: IDBTransactionMode, fn: (s: IDBObjectStore) 
       }),
   )
 }
+
+const localNotesListeners = new Set<() => void>()
 
 const localBackend: Backend = {
   kind: 'local',
@@ -118,6 +147,23 @@ const localBackend: Backend = {
   async names(ids) {
     return Object.fromEntries(ids.map((i) => [i, '']))
   },
+  subscribeNotes(fn) {
+    const load = () =>
+      tx<Note[]>('notes', 'readonly', (s) => s.getAll()).then((all) => fn(all.sort((a, b) => b.ts - a.ts)))
+    localNotesListeners.add(load)
+    load()
+    return () => localNotesListeners.delete(load)
+  },
+  async addNote(n) {
+    await tx('notes', 'readwrite', (s) => s.put({ ...n, id: newNoteId(), ts: Date.now() }))
+    localNotesListeners.forEach((l) => l())
+  },
+  async setNoteResolved(id, resolved) {
+    const cur = await tx<Note | undefined>('notes', 'readonly', (s) => s.get(id))
+    if (!cur) return
+    await tx('notes', 'readwrite', (s) => s.put({ ...cur, resolved, resolvedTs: resolved ? Date.now() : undefined }))
+    localNotesListeners.forEach((l) => l())
+  },
 }
 
 // ---------------------------------------------------------------- claude.ai db
@@ -127,9 +173,15 @@ type DocRef = {
   get(): Promise<Snap>
   set(d: Record<string, unknown>): Promise<void>
   delete(): Promise<void>
+  update(d: Record<string, unknown>): Promise<void>
   onSnapshot(next: (s: Snap) => void, err?: (e: { code: string }) => void): () => void
 }
-type Query = { orderBy(f: string, d?: 'asc' | 'desc'): Query; limit(n: number): Query; get(): Promise<{ docs: Snap[] }> }
+type Query = {
+  orderBy(f: string, d?: 'asc' | 'desc'): Query
+  limit(n: number): Query
+  get(): Promise<{ docs: Snap[] }>
+  onSnapshot(next: (s: { docs: Snap[] }) => void, err?: (e: { code: string }) => void): () => void
+}
 type DB = { doc(p: string): DocRef; collection(p: string): Query & { doc(id: string): DocRef } }
 type User = {
   id(): Promise<string | null>
@@ -226,6 +278,40 @@ function cloudBackend(db: DB, user: User | null, me: string | null, canWrite: bo
     async pruneHistory() {
       const auto = (await this.listHistory()).filter((e) => !e.label)
       for (const e of auto.slice(MAX_HISTORY)) await this.deleteHistory(e.id)
+    },
+    subscribeNotes(fn) {
+      let stopped = false
+      let unsub = () => {}
+      let retry: number | undefined
+      const q = db.collection('notes').orderBy('ts', 'desc').limit(500)
+      const deliver = (snap: { docs: Snap[] }) =>
+        fn(snap.docs.filter((d) => d.exists).map((d) => ({ ...(d.data() as Omit<Note, 'id'>), id: d.id })))
+      const listen = () => {
+        if (stopped) return
+        unsub = q.onSnapshot(deliver, () => {
+          if (!stopped) retry = window.setTimeout(listen, 3000)
+        })
+      }
+      const poll = () => {
+        if (!stopped) q.get().then(deliver, () => {})
+      }
+      listen()
+      window.addEventListener('focus', poll)
+      return () => {
+        stopped = true
+        unsub()
+        window.clearTimeout(retry)
+        window.removeEventListener('focus', poll)
+      }
+    },
+    async addNote(n) {
+      const note = JSON.parse(JSON.stringify({ ...n, ts: Date.now(), by: me ?? undefined }))
+      await db.doc(`notes/${newNoteId()}`).set(note)
+    },
+    async setNoteResolved(id, resolved) {
+      await db.doc(`notes/${id}`).update(
+        resolved ? { resolved: true, resolvedBy: me ?? '', resolvedTs: Date.now() } : { resolved: false, resolvedBy: '', resolvedTs: 0 },
+      )
     },
     async names(ids) {
       if (!user || !ids.length) return Object.fromEntries(ids.map((i) => [i, '']))

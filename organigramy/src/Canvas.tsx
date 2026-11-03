@@ -13,11 +13,12 @@ interface Props {
   selectedId: string | null
   readOnly?: boolean
   flagIds?: Set<string>
+  noteCounts?: Map<string, number>
   onSelect: (id: string | null) => void
   onMove: (id: string, hint: DropHint) => void
 }
 
-export function Canvas({ doc, view, lang, page, selectedId, readOnly, flagIds, onSelect, onMove }: Props) {
+export function Canvas({ doc, view, lang, page, selectedId, readOnly, flagIds, noteCounts, onSelect, onMove }: Props) {
   const wrap = useRef<HTMLDivElement>(null)
   const { w, h } = pageSize(page)
   const [zoom, setZoom] = useState(1)
@@ -165,6 +166,7 @@ export function Canvas({ doc, view, lang, page, selectedId, readOnly, flagIds, o
             dragId={drag?.id}
             drop={drag?.drop}
             flagIds={flagIds}
+            noteCounts={noteCounts}
             className="sheet"
             style={{ width: w * PX_PER_MM * zoom, height: h * PX_PER_MM * zoom }}
           />

@@ -4,6 +4,7 @@ import type { HistoryEntry } from './db'
 import { createBlankDoc } from './seed'
 import { enStale, translateErrorText, translateTitles, TranslateError, useTranslateAvailable } from './translate'
 import { NodeEditor } from './NodeEditor'
+import { caption, NodeNotes, NotesPanel, useNotes } from './Notes'
 import { addChild, addSibling, deleteNode, descendants, isOrgDoc, moveNode } from './ops'
 import { HistoryPanel, PrintDialog, SettingsDialog, SheetMetaEditor, viewName, type PrintJob } from './Panels'
 import { buildPdf, saveFile } from './pdf'
@@ -21,7 +22,7 @@ export default function App() {
   const [lang, setLang] = useState<Lang>('cs')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [freshId, setFreshId] = useState<string | null>(null)
-  const [side, setSide] = useState<'edit' | 'history'>('edit')
+  const [side, setSide] = useState<'edit' | 'notes' | 'history'>('edit')
   const [preview, setPreview] = useState<{ entry: HistoryEntry; doc: OrgDoc } | null>(null)
   const [lastByName, setLastByName] = useState('')
   const ro = store.readOnly
@@ -82,11 +83,12 @@ export default function App() {
     }
   }
 
+  const notes = useNotes(store.backend)
+
   const select = useCallback((id: string | null) => {
-    if (ro) return
     setSelectedId(id)
     setFreshId(null)
-    if (id) setSide('edit')
+    if (id) setSide(ro ? 'notes' : 'edit')
   }, [ro])
 
   const add = useCallback(
@@ -136,7 +138,7 @@ export default function App() {
         setDialog('print')
         return
       }
-      if (typing || dialog || preview) return
+      if (typing || dialog || preview || ro) return
       if (e.key === 'Escape') select(null)
       else if (e.key === 'Tab' && selectedId) {
         e.preventDefault()
@@ -151,7 +153,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [add, dialog, preview, remove, select, selectedId, store])
+  }, [add, dialog, preview, remove, ro, select, selectedId, store])
 
   useEffect(() => {
     if (!printJob) return
@@ -272,6 +274,16 @@ export default function App() {
               </button>
             </>
           )}
+          <button
+            type="button"
+            className={`btn notes-btn ${notes.open.length ? 'has-open' : ''}`}
+            onClick={() => setSide('notes')}
+            title="Komentáře se netisknou"
+          >
+            {notes.open.length
+              ? `${notes.open.length} ${notes.open.length === 1 ? 'komentář' : notes.open.length < 5 ? 'komentáře' : 'komentářů'}`
+              : 'Komentáře'}
+          </button>
           <button type="button" className="btn primary" onClick={() => setDialog('print')}>
             Tisk, PDF
           </button>
@@ -279,7 +291,33 @@ export default function App() {
 
         <main className="main">
           <section className="stage">
-            {ro && <div className="readonly-bar">Jen pro čtení. K úpravám potřebujete od vlastníka stránky oprávnění Contributor nebo Editor.</div>}
+            {ro && (
+              <div className="readonly-bar">
+                Jen pro čtení. Kliknutím na pozici k ní můžete přidat komentář.
+              </div>
+            )}
+            {notes.fresh && (
+              <div className="fresh-note">
+                <span>
+                  Nový komentář{notes.fresh.by && notes.names[notes.fresh.by] ? ` od ${notes.names[notes.fresh.by]}` : ''}:{' '}
+                  {caption(doc, notes.fresh.nodeId)}
+                </span>
+                <button
+                  type="button"
+                  className="btn small"
+                  onClick={() => {
+                    if (notes.fresh?.nodeId && doc.nodes[notes.fresh.nodeId]) select(notes.fresh.nodeId)
+                    setSide(ro ? 'notes' : notes.fresh?.nodeId ? 'edit' : 'notes')
+                    notes.dismissFresh()
+                  }}
+                >
+                  Zobrazit
+                </button>
+                <button type="button" className="link small" onClick={notes.dismissFresh}>
+                  Zavřít
+                </button>
+              </div>
+            )}
             {preview && (
               <div className="preview-bar">
                 <span>
@@ -308,6 +346,7 @@ export default function App() {
               lang={lang}
               page={PREVIEW_PAGE}
               selectedId={preview ? null : selectedId}
+              noteCounts={preview ? undefined : notes.openCounts}
               readOnly={!!preview || ro}
               flagIds={preview || ro ? undefined : staleIds}
               onSelect={preview ? () => {} : select}
@@ -362,14 +401,31 @@ export default function App() {
 
           <aside className="side">
             <div className="side-tabs">
-              <button type="button" className={side === 'edit' ? 'active' : ''} onClick={() => setSide('edit')}>
-                {selected ? 'Pozice' : 'List'}
+              {!ro && (
+                <button type="button" className={side === 'edit' ? 'active' : ''} onClick={() => setSide('edit')}>
+                  {selected ? 'Pozice' : 'List'}
+                </button>
+              )}
+              <button type="button" className={side === 'notes' ? 'active' : ''} onClick={() => setSide('notes')}>
+                Komentáře{notes.open.length ? ` (${notes.open.length})` : ''}
               </button>
               <button type="button" className={side === 'history' ? 'active' : ''} onClick={() => setSide('history')}>
                 Historie
               </button>
             </div>
-            {side === 'history' || ro ? (
+            {side === 'notes' || (ro && side !== 'history') ? (
+              <div className="panel-body notes-side">
+                {selected && store.backend && (
+                  <>
+                    <div className="node-notes-for">{caption(doc, selected.id)}</div>
+                    <NodeNotes backend={store.backend} state={notes} nodeId={selected.id} view={view} />
+                  </>
+                )}
+                {store.backend && (
+                  <NotesPanel backend={store.backend} state={notes} doc={doc} view={view} onShow={(id) => select(id)} />
+                )}
+              </div>
+            ) : side === 'history' ? (
               <HistoryPanel
                 tick={store.historyTick}
                 previewId={preview?.entry.id ?? null}
@@ -388,7 +444,9 @@ export default function App() {
                 onAddChild={() => add('child')}
                 onAddSibling={() => add('sibling')}
                 onDelete={remove}
-              />
+              >
+                {store.backend && <NodeNotes backend={store.backend} state={notes} nodeId={selected.id} view={view} />}
+              </NodeEditor>
             ) : (
               <SheetMetaEditor doc={doc} view={view} commit={commit} />
             )}
