@@ -41,6 +41,13 @@ export interface Backend {
 
 const MAX_HISTORY = 200
 
+/** Organigram mezitím uložil někdo jiný; nese jeho aktuální stav. */
+export class ConflictError extends Error {
+  constructor(public remote: RemoteChange) {
+    super('conflict')
+  }
+}
+
 export function newHistoryId(ts: number): string {
   return `h${ts.toString(36)}${Math.random().toString(36).slice(2, 7)}`
 }
@@ -136,6 +143,8 @@ type ClaudeUse = { use(name: string): Promise<unknown> }
 function cloudBackend(db: DB, user: User | null, me: string | null, canWrite: boolean): Backend {
   const mine = new Set<string>()
   const current = db.doc('org/current')
+  /** Čas nejnovějšího stavu, který tato stránka zná. */
+  let seenTs = 0
   return {
     kind: 'cloud',
     me,
@@ -143,22 +152,59 @@ function cloudBackend(db: DB, user: User | null, me: string | null, canWrite: bo
     async loadDoc() {
       const s = await current.get()
       const d = s.data()
-      return s.exists && d?.doc ? { doc: d.doc as OrgDoc, by: d.by as string | undefined, ts: d.ts as number } : undefined
+      if (!s.exists || !d?.doc) return undefined
+      seenTs = Math.max(seenTs, d.ts as number)
+      return { doc: d.doc as OrgDoc, by: d.by as string | undefined, ts: d.ts as number }
     },
     async saveDoc(doc) {
+      // Ochrana proti přepsání: když mezitím uložil někdo jiný, neukládat zastaralý stav.
+      const s = await current.get()
+      const d = s.data()
+      if (s.exists && d && (d.ts as number) > seenTs && !mine.has(d.writeId as string)) {
+        throw new ConflictError({ doc: d.doc as OrgDoc, by: d.by as string | undefined, ts: d.ts as number })
+      }
       const writeId = Math.random().toString(36).slice(2)
+      const ts = Math.max(Date.now(), seenTs + 1)
       mine.add(writeId)
-      await current.set({ doc, ts: Date.now(), by: me ?? undefined, writeId })
+      seenTs = ts
+      await current.set({ doc, ts, by: me ?? undefined, writeId })
     },
     subscribe(fn) {
-      return current.onSnapshot(
-        (s) => {
-          const d = s.data()
-          if (!s.exists || !d?.doc || s.metadata.hasPendingWrites || mine.has(d.writeId as string)) return
-          fn({ doc: d.doc as OrgDoc, by: d.by as string | undefined, ts: d.ts as number })
-        },
-        () => {},
-      )
+      // Živé změny přes onSnapshot; navíc kontrola při návratu do okna a každých 30 s,
+      // a obnovení odběru, když spojení spadne.
+      let stopped = false
+      let unsub = () => {}
+      let retry: number | undefined
+      const handle = (s: Snap) => {
+        const d = s.data()
+        if (!s.exists || !d?.doc || s.metadata.hasPendingWrites || mine.has(d.writeId as string)) return
+        const ts = d.ts as number
+        if (ts <= seenTs) return
+        seenTs = ts
+        fn({ doc: d.doc as OrgDoc, by: d.by as string | undefined, ts })
+      }
+      const listen = () => {
+        if (stopped) return
+        unsub = current.onSnapshot(handle, () => {
+          if (!stopped) retry = window.setTimeout(listen, 3000)
+        })
+      }
+      const poll = () => {
+        if (!stopped) current.get().then(handle, () => {})
+      }
+      const onVisible = () => document.visibilityState === 'visible' && poll()
+      listen()
+      const timer = window.setInterval(poll, 30000)
+      window.addEventListener('focus', poll)
+      document.addEventListener('visibilitychange', onVisible)
+      return () => {
+        stopped = true
+        unsub()
+        window.clearTimeout(retry)
+        window.clearInterval(timer)
+        window.removeEventListener('focus', poll)
+        document.removeEventListener('visibilitychange', onVisible)
+      }
     },
     async listHistory() {
       const q = await db.collection('history').orderBy('ts', 'desc').limit(1000).get()

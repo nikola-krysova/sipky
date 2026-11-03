@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { newHistoryId, openBackend, type Backend } from './db'
+import { ConflictError, newHistoryId, openBackend, type Backend, type RemoteChange } from './db'
 import { createSeedDoc } from './seed'
 import type { OrgDoc } from './types'
 
@@ -22,6 +22,19 @@ export function useOrgStore() {
   const pending = useRef<OrgDoc | null>(null)
   const docRef = useRef<OrgDoc | null>(null)
   docRef.current = doc
+
+  /** Změna od kolegy: převezme se celý organigram. */
+  const applyRemote = useCallback((c: RemoteChange) => {
+    pending.current = null
+    window.clearTimeout(saveTimer.current)
+    lastHist.current = null
+    docRef.current = c.doc
+    setDoc(c.doc)
+    setLastBy(c.by)
+    setSavedAt(c.ts)
+    setSaveState('saved')
+    setHistoryTick((t) => t + 1)
+  }, [])
 
   useEffect(() => {
     let unsub = () => {}
@@ -47,21 +60,10 @@ export function useOrgStore() {
       } else {
         setSaveState('empty')
       }
-      unsub = b.subscribe((c) => {
-        // Změna od kolegy: převezme se celý organigram.
-        pending.current = null
-        window.clearTimeout(saveTimer.current)
-        lastHist.current = null
-        docRef.current = c.doc
-        setDoc(c.doc)
-        setLastBy(c.by)
-        setSavedAt(c.ts)
-        setSaveState('saved')
-        setHistoryTick((t) => t + 1)
-      })
+      unsub = b.subscribe(applyRemote)
     })().catch(() => setSaveState('error'))
     return () => unsub()
-  }, [])
+  }, [applyRemote])
 
   const flush = useCallback(async () => {
     window.clearTimeout(saveTimer.current)
@@ -73,10 +75,13 @@ export function useOrgStore() {
       setSaveState('saved')
       setSavedAt(Date.now())
       setLastBy(backend.me ?? undefined)
-    } catch {
-      setSaveState('error')
+    } catch (e) {
+      if (e instanceof ConflictError) {
+        applyRemote(e.remote)
+        alert('Organigram mezitím upravil někdo jiný. Načetla se aktuální verze, poslední úpravu prosím zopakujte.')
+      } else setSaveState('error')
     }
-  }, [backend])
+  }, [backend, applyRemote])
 
   useEffect(() => {
     const onHide = () => void flush()
